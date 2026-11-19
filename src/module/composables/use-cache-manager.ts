@@ -41,7 +41,8 @@ function resetDraft() {
 	draft.autoPurge = state.value.effective.autoPurge;
 	draft.skipAllowed = state.value.effective.skipAllowed;
 	draft.ignoreList = [...state.value.effective.ignoreList];
-	draft.ttl = state.value.effective.ttl;
+	// '' when the server part is older than the app part (Directus not restarted after an update).
+	draft.ttl = state.value.effective.ttl ?? '';
 }
 
 export function useCacheManager() {

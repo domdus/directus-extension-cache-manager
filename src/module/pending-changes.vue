@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useCacheManager } from './composables/use-cache-manager';
-import { sameDuration } from '../shared/duration';
+import { durationText, sameDuration } from '../shared/duration';
 
 const { state, draft, discard } = useCacheManager();
 
@@ -22,7 +22,7 @@ const changes = computed(() => {
 	const onOff = (value: boolean) => (value ? 'on' : 'off');
 	if (draft.autoPurge !== effective.autoPurge) list.push(`clear the cache when content changes: ${onOff(draft.autoPurge)}`);
 	if (draft.skipAllowed !== effective.skipAllowed) list.push(`allow apps to skip the cache: ${onOff(draft.skipAllowed)}`);
-	if (!sameDuration(draft.ttl, effective.ttl)) list.push(`keep answers in the cache for: ${draft.ttl.trim() || '(empty)'}`);
+	if (!sameDuration(draft.ttl, effective.ttl)) list.push(`keep answers in the cache for: ${durationText(draft.ttl) || '(empty)'}`);
 	const now = new Set(effective.ignoreList);
 	const next = new Set(draft.ignoreList);
 	const added = draft.ignoreList.filter((name) => !now.has(name));

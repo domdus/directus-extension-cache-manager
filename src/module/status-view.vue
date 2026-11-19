@@ -117,7 +117,7 @@
 						:override="state.stored?.ttl ?? null"
 					>
 						<template #edit>
-							<v-input v-model="draft.ttl" placeholder="e.g. 1h" :class="{ invalid: !ttlValid }" />
+							<v-input :model-value="draft.ttl" placeholder="e.g. 1h" :class="{ invalid: !ttlValid }" @update:model-value="draft.ttl = $event ?? ''" />
 							<span v-if="!ttlValid" class="field-error">{{ TTL_ERROR }}</span>
 							<span class="field-hint">
 								Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire

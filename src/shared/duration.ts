@@ -47,9 +47,15 @@ export function isValidTtl(value: unknown): boolean {
 	return msValue !== null && msValue > 0 && msValue <= MAX_TTL_MS;
 }
 
+/** Duration as trimmed text; null/undefined (e.g. a cleared input) become "". */
+export function durationText(value: unknown): string {
+	if (value === null || value === undefined) return '';
+	return String(value).trim();
+}
+
 /** Same lifetime, written differently ("1h" and "60m")? Falls back to text comparison when unreadable. */
-export function sameDuration(a: string, b: string): boolean {
+export function sameDuration(a: unknown, b: unknown): boolean {
 	const left = parseDuration(a);
 	const right = parseDuration(b);
-	return left !== null && right !== null ? left === right : a.trim() === b.trim();
+	return left !== null && right !== null ? left === right : durationText(a) === durationText(b);
 }

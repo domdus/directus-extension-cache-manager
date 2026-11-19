@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aggregate, buildAnalysis, isRecommendable, parseHours, purgeMinutes, recommendation, toBuckets, type ActivityBucket } from './analysis';
 import { applyToEnv, mergeValues, parseStored, readValues, toOverride, validateInput, type CacheValues } from './settings';
+import { durationText, isValidTtl, sameDuration } from './duration';
 
 const WINDOW = 1440;
 
@@ -267,4 +268,14 @@ test('validateInput checks ttl', () => {
 		assert.equal(result.ok, false, String(ttl));
 		assert.match(result.ok ? '' : result.errors.join(), /Use a duration like 5m, 1h or 12h/);
 	}
+});
+
+test('sameDuration and durationText accept a cleared input (null/undefined)', () => {
+	assert.equal(durationText(null), '');
+	assert.equal(durationText(undefined), '');
+	assert.equal(durationText(' 1h '), '1h');
+	assert.equal(sameDuration(null, '1h'), false);
+	assert.equal(sameDuration(undefined, undefined), true);
+	assert.equal(sameDuration('1h', '60m'), true);
+	assert.equal(isValidTtl(null), false);
 });

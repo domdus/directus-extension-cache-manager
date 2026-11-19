@@ -1,5 +1,5 @@
 import { MAX_LIST_LENGTH } from './constants';
-import { isValidTtl, sameDuration, TTL_ERROR } from './duration';
+import { durationText, isValidTtl, sameDuration, TTL_ERROR } from './duration';
 
 /** The env values this extension manages. */
 export type CacheValues = {
@@ -132,7 +132,7 @@ export function toOverride(baseline: CacheValues, desired: CacheValues): Overrid
 		autoPurge: desired.autoPurge === baseline.autoPurge ? null : desired.autoPurge,
 		skipAllowed: desired.skipAllowed === baseline.skipAllowed ? null : desired.skipAllowed,
 		ignoreList: sameList(desired.ignoreList, baseline.ignoreList) ? null : unique(desired.ignoreList),
-		ttl: sameDuration(desired.ttl, baseline.ttl) ? null : desired.ttl.trim(),
+		ttl: sameDuration(desired.ttl, baseline.ttl) ? null : durationText(desired.ttl),
 	};
 }
 
