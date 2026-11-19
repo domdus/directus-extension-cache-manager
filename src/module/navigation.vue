@@ -7,10 +7,10 @@
 			</v-list-item-content>
 		</v-list-item>
 
-		<v-list-item to="/cache-manager/collections">
+		<v-list-item to="/cache-manager/clearing">
 			<v-list-item-icon><v-icon name="list_alt" /></v-list-item-icon>
 			<v-list-item-content>
-				<v-text-overflow text="Collections" />
+				<v-text-overflow text="Cache clearing" />
 			</v-list-item-content>
 		</v-list-item>
 

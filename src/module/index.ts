@@ -1,7 +1,7 @@
 import { defineModule } from '@directus/extensions-sdk';
 import { EXTENSION_ID } from '../shared/constants';
 import { userHasAdminAccess } from '../shared/admin';
-import CollectionsView from './collections-view.vue';
+import ClearingView from './clearing-view.vue';
 import SettingsView from './settings-view.vue';
 import StatusView from './status-view.vue';
 
@@ -15,17 +15,21 @@ export default defineModule({
 			component: StatusView,
 		},
 		{
-			path: 'collections',
-			component: CollectionsView,
+			path: 'clearing',
+			component: ClearingView,
 		},
 		{
 			path: 'settings',
 			component: SettingsView,
 		},
 		{
-			// Earlier name of the Collections page.
+			// Earlier names of the Cache clearing page.
+			path: 'collections',
+			redirect: '/cache-manager/clearing',
+		},
+		{
 			path: 'analysis',
-			redirect: '/cache-manager/collections',
+			redirect: '/cache-manager/clearing',
 		},
 	],
 	// The endpoint checks admin rights too; this only hides the module for everyone else.

@@ -38,6 +38,8 @@ export type Analysis = {
 	minuteSets: Record<string, number[]>;
 	/** Minutes in which at least one write would clear the whole cache, with the effective settings. */
 	purgeMinutes: number;
+	/** Minutes with any change, ignored or not: how often the cache would be cleared if nothing were ignored. */
+	anyWriteMinutes: number;
 	recommendedList: string[];
 	/** Purge minutes with the effective list plus all recommendations. */
 	recommendedPurgeMinutes: number;
@@ -89,7 +91,7 @@ export function recommendation(
 	windowMinutes: number,
 ): { recommended: boolean; reason: string } {
 	const share = windowMinutes ? stats.minutes / windowMinutes : 0;
-	if (stats.ignored) return { recommended: false, reason: 'Already selected' };
+	if (stats.ignored) return { recommended: false, reason: 'Already ignored' };
 	if (!isRecommendable(stats.collection)) return { recommended: false, reason: 'Directus system collection' };
 	if (share < RECOMMEND_MIN_SHARE) return { recommended: false, reason: `Changes less than ${perHourText(RECOMMEND_MIN_SHARE)} times per hour` };
 	if (stats.writes && stats.editorWrites / stats.writes > EDITOR_SHARE_MAX) return { recommended: false, reason: 'Mostly changed by editors in the Data Studio' };
@@ -140,6 +142,7 @@ export function buildAnalysis(rows: ActivityBucket[], options: AnalysisOptions):
 		collections,
 		minuteSets: Object.fromEntries([...sets].map(([collection, set]) => [collection, [...set].sort((a, b) => a - b)])),
 		purgeMinutes: current,
+		anyWriteMinutes: purgeMinutes(sets, [], true),
 		recommendedList,
 		recommendedPurgeMinutes: purgeMinutes(sets, [...ignoreList, ...recommendedList], autoPurge),
 		whatIf: candidate ? { list: candidate, purgeMinutes: purgeMinutes(sets, candidate, autoPurge) } : null,

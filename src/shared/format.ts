@@ -71,7 +71,7 @@ export function formatTimesPerHour(minutes: number, windowMinutes: number): stri
 	return formatNumber(rate);
 }
 
-/** Table "Effect if selected": "−12/h", "−<1/h", "0". */
+/** Table "Effect if ignored": "−12/h", "−<1/h", "0". */
 export function formatSavedPerHour(minutes: number, windowMinutes: number): string {
 	if (!(minutes > 0)) return '0';
 	return `−${formatTimesPerHour(minutes, windowMinutes)}/h`;

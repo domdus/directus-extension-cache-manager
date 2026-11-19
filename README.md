@@ -1,8 +1,8 @@
 # Cache Manager
 
-Choose which changes clear the Directus cache, right in the Data Studio. No config files, no restart. The Collections page shows how often the cache is cleared, which collections cause it, and suggests what to change.
+Choose which changes clear the Directus cache, right in the Data Studio. No config files, no restart. The Cache clearing page shows how often the cache is cleared, which collections cause it, and suggests what to change.
 
-Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Collections** shows which collections clear the cache and lets you choose the ones that shouldn't. **Settings** checks for updates, exports and imports what you saved, and removes the extension's data before you uninstall.
+Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Cache clearing** shows what clears the cache and lets you choose which collections to ignore. Changes to an ignored collection don't clear the cache. **Settings** checks for updates, exports and imports what you saved, and removes the extension's data before you uninstall.
 
 ## Why
 
@@ -44,10 +44,10 @@ npm run build
 
 ## Configure
 
-1. Open **Cache Manager → Collections** and pick a time period (last hour to last 7 days).
-2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared in 296 minutes of the last 24 hours." Lower is better.
-3. Tick the collections whose changes should not clear the cache, or click **Select suggestion** in the **Suggestion** tile. The tile **With your selection** shows the new value, for example "about 1 minute per hour instead of 12".
-4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share one selection. A notice lists what is not saved yet.
+1. Open **Cache Manager → Cache clearing** and pick a time period (last hour to last 7 days).
+2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared in 296 minutes of the last 24 hours." Lower is better. If collections are already ignored, the tile also shows how often it would be cleared without them, for example "49 without the ignored collections".
+3. Tick collections in the **Ignore** column, or click **Ignore suggestion** in the **Suggestion** tile. The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
+4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share your unsaved changes. A notice lists what is not saved yet.
 5. Click **Save & apply** (top right, on either page). It is used right away.
 
 **Reset** on the Status page removes what you saved here and uses the configured values again.
@@ -62,32 +62,33 @@ npm run build
 
 | In the module | Setting name | On | Off | Recommended |
 |---|---|---|---|---|
-| Clear the cache when content changes | `CACHE_AUTO_PURGE` | A change to a collection that is not selected clears the whole cache. Everyone sees changes right away | Changes never clear the cache. They show up when the cached copy expires, so editors may wait that long | On |
+| Clear the cache when content changes | `CACHE_AUTO_PURGE` | A change to a collection that is not ignored clears the whole cache. Everyone sees changes right away | Changes never clear the cache. They show up when the cached copy expires, so editors may wait that long | On |
 | Allow apps to skip the cache | `CACHE_SKIP_ALLOWED` | An app can ask for fresh data with the header `Cache-Control: no-store` | The header has no effect | On, if your Directus is not open to the public |
-| Collections whose changes don't clear the cache | `CACHE_AUTO_PURGE_IGNORE_LIST` | | | Collections that change very often, and that nobody needs up to date to the second: counters, logs, statistics |
+| Ignored collections | `CACHE_AUTO_PURGE_IGNORE_LIST` | | | Collections that change very often, and that nobody needs up to date to the second: counters, logs, statistics |
 | How long answers stay in the cache | `CACHE_TTL` | A duration like `5m`, `1h` or `1d`, at most 30 days | | Between 5 minutes and a few hours. Shorter means fresher data, but more work for the database. Longer means less work for the database, but data that is not cleared can be older |
 
 A new value for **How long answers stay in the cache** applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared.
 
 **Where the cache is kept** (`CACHE_STORE`) is shown on the Status page, but can't be changed here.
 
-Selected collections can be served from the cache for up to that time after a change. Apps can ask for fresh data with the header `Cache-Control: no-store` when **Allow apps to skip the cache** is on. The Data Studio always loads selected collections fresh, so editors see their changes.
+Ignored collections can be served from the cache for up to that time after a change. Apps can ask for fresh data with the header `Cache-Control: no-store` when **Allow apps to skip the cache** is on. The Data Studio always loads selected collections fresh, so editors see their changes.
 
-Don't select collections that decide what users may see or buy, like subscriptions, purchases or access rights. Only select them if the apps that read them ask for fresh data. Otherwise a user could get or lose access late.
+Don't ignore collections that decide what users may see or buy, like subscriptions, purchases or access rights. Only ignore them if the apps that read them ask for fresh data. Otherwise a user could get or lose access late.
 
-## How the Collections page counts
+## How the Cache clearing page counts
 
-- A minute counts as "cleared" when at least one collection that is not selected changed in it. Several changes in the same minute count as one.
+- A minute counts as "cleared" when at least one collection that is not ignored changed in it. Several changes in the same minute count as one.
 - **How often the cache is cleared** shows how many times per hour the cache was cleared in the chosen period (several clears in the same minute count once). Lower is better.
 - **Changed in** shows, per collection, the minutes with at least one change, and how many that is per hour (for example "288 min · ~12/h").
-- **Effect if selected** shows how much less often the cache would be cleared if you also select that collection. A bigger drop is better.
+- **Status** shows "Ignored" for collections ignored now and "Clears cache" for the others.
+- **Effect if ignored** shows how much less often the cache would be cleared if you also ignored that collection. A bigger drop is better.
 - The numbers come from the activity log. Some automatic changes, for example from some Flows, are not in the activity log. The real numbers can be higher.
 
 ## Suggestions
 
-A collection is suggested when all of these are true (limits in `src/shared/constants.ts`):
+A collection is suggested for ignoring when all of these are true (limits in `src/shared/constants.ts`):
 
-- it is not selected yet,
+- it is not ignored yet,
 - it changed at least **3 times per hour** in the chosen period,
 - it is not a Directus system collection. `directus_*` collections are never suggested, except `directus_activity`, `directus_presets`, `directus_notifications` and `directus_revisions`,
 - it is not mostly changed by editors in the Data Studio: at most **50 %** of its changes came from logged-in users on the public address of Directus (`PUBLIC_URL`). This check needs a full address there.
@@ -96,7 +97,7 @@ A collection is suggested when all of these are true (limits in `src/shared/cons
 
 - **Several servers.** Saving changes the settings on the server that handles the save. If Directus runs on several servers, restart the others after saving. They use the saved settings when they start. The Status page warns when the settings in use don't match.
 - **Saving clears the cache once**, because it writes to the project settings.
-- **Databases.** The Collections page works with PostgreSQL and MySQL. On other databases it shows an error. The settings still work.
+- **Databases.** The Cache clearing page works with PostgreSQL and MySQL. On other databases it shows an error. The settings still work.
 - **Browsers and proxies.** When **Clear the cache when content changes** is off, Directus also tells browsers and proxies how long they may keep an answer. It uses the value of **How long answers stay in the cache** for that, so a new value also applies there for new answers.
 - **Schema snapshots** include the extra field `cache_manager` on `directus_settings`.
 
@@ -109,7 +110,7 @@ A collection is suggested when all of these are true (limits in `src/shared/cons
 - **Saved here** is stored in `directus_settings.cache_manager` as `{ autoPurge, skipAllowed, ignoreList, ttl, updatedAt, updatedBy }`. `null` means "use the configured value". A value equal to the configured one is stored as `null`, so later configuration changes come through.
 - These changes are lost when Directus restarts, so a hook applies the saved values again at startup (`app.before`).
 - Saving goes through the settings service, so it appears in the activity log and revisions under the admin who saved.
-- The Collections page uses one grouped query on `directus_activity` (creates, updates and deletes in the chosen period, per collection and minute).
+- The Cache clearing page uses one grouped query on `directus_activity` (creates, updates and deletes in the chosen period, per collection and minute).
 
 ### API
 
@@ -118,7 +119,7 @@ All routes need an admin.
 | Route | Meaning |
 |---|---|
 | `GET /cache-manager/state` | Configured values, values in use, saved values, `CACHE_TTL`, `CACHE_STORE`, collections |
-| `GET /cache-manager/analysis?hours=24&candidate=a,b` | Numbers for the Collections page; `candidate` adds a what-if value for that list |
+| `GET /cache-manager/analysis?hours=24&candidate=a,b` | Numbers for the Cache clearing page; `candidate` adds a what-if value for that list |
 | `POST /cache-manager/apply` | Body `{ "autoPurge": true, "skipAllowed": null, "ignoreList": ["view_counter"], "ttl": "1h" }`. `null` or missing = configured value. List entries must be existing collections |
 | `POST /cache-manager/reset` | Remove the saved values and use the configured values |
 | `POST /cache-manager/cleanup` | Use the configured values and delete the `cache_manager` field |

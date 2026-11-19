@@ -33,7 +33,7 @@
 			</sidebar-detail>
 			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Clear the cache when content changes">
 				<p class="sidebar-text">
-					<strong>On:</strong> a change to a collection that is not selected clears the whole cache. Everyone sees the
+					<strong>On:</strong> a change to a collection that is not ignored clears the whole cache. Everyone sees the
 					change right away.
 				</p>
 				<p class="sidebar-text">
@@ -46,7 +46,7 @@
 				<p class="sidebar-text">
 					<strong>On:</strong> an app can ask for fresh data. It sends the header <code>Cache-Control: no-store</code>.
 				</p>
-				<p class="sidebar-text">Apps need this to read selected collections up to date.</p>
+				<p class="sidebar-text">Apps need this to read ignored collections up to date.</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on, if your Directus is not open to the public.</p>
 			</sidebar-detail>
 			<sidebar-detail id="ttl" icon="schedule" title="How long answers stay in the cache">
@@ -101,13 +101,13 @@
 						:override="state.stored?.skipAllowed == null ? null : onOff(state.stored.skipAllowed)"
 					/>
 					<setting-card
-						title="Collections whose changes don't clear the cache"
+						title="Ignored collections"
 						env="CACHE_AUTO_PURGE_IGNORE_LIST"
 						:effective="state.effective.ignoreList"
 						:configured="state.baseline.ignoreList"
 						:override="state.stored?.ignoreList ?? null"
 					>
-						<v-button small secondary to="/cache-manager/collections">Choose collections</v-button>
+						<v-button small secondary to="/cache-manager/clearing">Choose ignored collections</v-button>
 					</setting-card>
 					<setting-card
 						title="How long answers stay in the cache"

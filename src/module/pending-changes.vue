@@ -27,8 +27,8 @@ const changes = computed(() => {
 	const next = new Set(draft.ignoreList);
 	const added = draft.ignoreList.filter((name) => !now.has(name));
 	const removed = effective.ignoreList.filter((name) => !next.has(name));
-	if (added.length) list.push(`don't clear the cache for ${added.join(', ')}`);
-	if (removed.length) list.push(`clear the cache again for ${removed.join(', ')}`);
+	if (added.length) list.push(`ignore ${added.join(', ')}`);
+	if (removed.length) list.push(`stop ignoring ${removed.join(', ')}`);
 	return list;
 });
 </script>

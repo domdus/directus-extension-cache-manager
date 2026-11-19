@@ -1,5 +1,5 @@
 <template>
-	<private-view title="Collections" icon="list_alt">
+	<private-view title="Cache clearing" icon="list_alt">
 		<template #headline>
 			<v-breadcrumb :items="[{ name: 'Cache Manager', to: '/cache-manager' }]" />
 		</template>
@@ -23,25 +23,26 @@
 					Directus keeps a copy of its answers, the cache, so it does not have to ask the database every time.
 				</p>
 				<p class="sidebar-text">
-					A change to a collection that is not selected clears the whole cache. This page counts in how many minutes that
-					happened at least once. Several changes in the same minute count as one.
+					A change to a collection that is not ignored clears the whole cache. This page counts in how many minutes that
+					happened at least once. Several changes in the same minute count as one. Changes to ignored collections never
+					clear the cache.
 				</p>
 				<p class="sidebar-text">
 					The numbers come from the activity log. Some automatic changes, for example from some Flows, are not in the
 					activity log. The real numbers can be higher.
 				</p>
 			</sidebar-detail>
-			<sidebar-detail id="strategy" icon="lightbulb" title="What to select">
+			<sidebar-detail id="strategy" icon="lightbulb" title="What to ignore">
 				<p class="sidebar-text">
 					Good choices change very often, and nobody needs them up to date to the second: counters, logs, statistics.
 				</p>
 				<p class="sidebar-text">
-					Don't select collections that decide what users may see or buy, like subscriptions, purchases or access rights.
-					Only select them if the apps that read them ask for fresh data.
+					Don't ignore collections that decide what users may see or buy, like subscriptions, purchases or access rights.
+					Only ignore them if the apps that read them ask for fresh data.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="recommendations" icon="recommend" title="How suggestions are made">
-				<p class="sidebar-text">A collection is suggested when it</p>
+				<p class="sidebar-text">A collection is suggested for ignoring when it</p>
 				<ul class="sidebar-list">
 					<li>changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }} times per hour,</li>
 					<li>is not a Directus system collection,</li>
@@ -57,7 +58,7 @@
 
 			<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 				<template #icon><v-icon name="list_alt" /></template>
-				Which collections clear the cache
+				What clears the cache
 			</v-divider>
 
 			<div class="toolbar">
@@ -74,6 +75,9 @@
 							<span class="value">{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
 							<span class="unit">times per hour</span>
 						</div>
+						<span v-if="state?.effective.ignoreList.length" class="unit">
+							{{ formatTimesPerHour(analysis.anyWriteMinutes, analysis.windowMinutes) }} without the ignored collections
+						</span>
 						<span class="explain">
 							The cache was cleared in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}.
 							Lower is better: after clearing, Directus has to load everything from the database again.
@@ -81,8 +85,9 @@
 					</div>
 
 					<div class="tile" :class="{ changed: dirty }">
-						<span class="label">With your selection</span>
+						<span class="label">Your changes</span>
 						<template v-if="dirty">
+							<span class="text">Ignoring your choice:</span>
 							<div class="figure">
 								<span class="value">{{ formatTimesPerHour(whatIf, analysis.windowMinutes) }}</span>
 								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
@@ -91,7 +96,7 @@
 								The cache would have been cleared in {{ formatMinutes(whatIf, analysis.windowMinutes) }}. Lower is better.
 							</span>
 						</template>
-						<span v-else class="explain">No changes selected yet. Tick collections in the table below to see the effect here.</span>
+						<span v-else class="explain">No changes yet. Tick collections in the Ignore column to see the effect here.</span>
 					</div>
 
 					<div class="tile">
@@ -102,7 +107,7 @@
 								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
 							</div>
 							<span class="text">
-								Don't clear the cache when {{ analysis.recommendedList.length === 1 ? 'this collection changes' : 'these collections change' }}:
+								{{ analysis.recommendedList.length === 1 ? 'Ignore this collection' : 'Ignore these collections' }}:
 								{{ analysis.recommendedList.join(', ') }}.
 							</span>
 							<span class="explain">
@@ -111,7 +116,7 @@
 							</span>
 							<div>
 								<v-button small :secondary="!addableRecommendations.length" :disabled="!addableRecommendations.length" @click="add(addableRecommendations)">
-									{{ addableRecommendations.length ? 'Select suggestion' : 'Suggestion selected' }}
+									{{ addableRecommendations.length ? 'Ignore suggestion' : 'Added to your changes' }}
 								</v-button>
 							</div>
 							<span class="explain">Only do this if no app needs these entries to be up to date right away.</span>
@@ -131,7 +136,7 @@
 							:model-value="null"
 							:items="otherCollectionChoices"
 							:disabled="!otherCollectionChoices.length"
-							placeholder="Select another collection…"
+							placeholder="Ignore another collection…"
 							@update:model-value="addOther"
 						/>
 					</div>
@@ -141,11 +146,11 @@
 				<table class="analysis">
 					<thead>
 						<tr>
-							<th class="check-col">Don't clear</th>
+							<th class="check-col">Ignore</th>
 							<th>Collection</th>
 							<th class="num">Changes</th>
 							<th class="num">Changed in</th>
-							<th class="num">Effect if selected</th>
+							<th class="num">Effect if ignored</th>
 							<th>Status</th>
 							<th>Suggestion</th>
 						</tr>
@@ -157,7 +162,7 @@
 							<td class="num">{{ formatNumber(row.writes) }}</td>
 							<td class="num">{{ formatMinutesShort(row.minutes, analysis.windowMinutes) }}</td>
 							<td class="num">{{ row.ignored ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
-							<td>{{ row.ignored ? 'Already selected' : '–' }}</td>
+							<td>{{ row.ignored ? 'Ignored' : 'Clears cache' }}</td>
 							<td>
 								<span v-if="row.recommended" class="badge">Suggested</span>
 								<span v-else-if="!row.ignored" class="subdued">{{ row.reason }}</span>
@@ -169,8 +174,8 @@
 
 				<p class="meta">
 					{{ new Date(analysis.from).toLocaleString() }} to {{ new Date(analysis.to).toLocaleString() }}.
-					"Changed in" counts the minutes with at least one change, and how many that is per hour. "Effect if selected" shows how many times per hour
-					less the cache would be cleared if you also select that collection. A bigger drop is better.
+					"Changed in" counts the minutes with at least one change, and how many that is per hour. "Effect if ignored" shows how many times per hour
+					less the cache would be cleared if you also ignore that collection. A bigger drop is better.
 					<template v-if="!analysis.editorHeuristic">
 						The public address of Directus is not a full URL, so changes by editors can't be told apart from changes by
 						apps.
@@ -207,7 +212,7 @@ const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)'
 const hourItems = [1, 6, 24, 72, 168].map((value) => ({ text: `Last ${formatWindow(value)}`, value }));
 
 
-/** Collections with changes plus every selected or configured collection, so nothing selected is hidden. */
+/** Collections with changes plus every ignored or configured collection, so nothing ignored is hidden. */
 const rows = computed<CollectionStats[]>(() => {
 	const list = analysis.value?.collections ?? [];
 	const known = new Set(list.map((row) => row.collection));
@@ -239,7 +244,7 @@ const otherCollections = computed(() => {
 /** Collections without changes in the period, for the picker above the table. */
 const otherCollectionChoices = computed(() => otherCollections.value.map((name) => ({ text: name, value: name })));
 
-/** Picking a collection selects it right away (no separate button). */
+/** Picking a collection ignores it right away (no separate button). */
 function addOther(name: string | null) {
 	if (name) toggle(name, true);
 }

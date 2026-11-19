@@ -88,7 +88,7 @@ test('ignored collections are not recommended and save nothing more', () => {
 	const counter = analysis.collections.find((entry) => entry.collection === 'view_counter')!;
 	assert.equal(counter.ignored, true);
 	assert.equal(counter.recommended, false);
-	assert.equal(counter.reason, 'Already selected');
+	assert.equal(counter.reason, 'Already ignored');
 	assert.equal(counter.savedMinutes, 0);
 	assert.equal(analysis.purgeMinutes, 200);
 	assert.equal(analysis.whatIf, null);
@@ -338,4 +338,14 @@ test('parseImport reads exported files and bare settings, with plain errors', as
 	const result = validateInput(parseImport('{"ignoreList":["missing"]}'), new Set(['a']));
 	assert.equal(result.ok, false);
 	assert.match(result.ok ? '' : result.errors.join(), /This collection does not exist in this project: missing/);
+});
+
+test('anyWriteMinutes counts minutes with any change, ignored or not', () => {
+	const rows = [...writes('view_counter', range(0, 600)), ...writes('pages', range(590, 610)), ...writes('logs', range(1000, 1010))];
+	const analysis = buildAnalysis(rows, options({ ignoreList: ['view_counter', 'logs'] }));
+	assert.equal(analysis.purgeMinutes, 20);
+	assert.equal(analysis.anyWriteMinutes, 620);
+	// With auto purge off nothing is cleared, but the "without ignoring" value still shows what changed.
+	assert.equal(buildAnalysis(rows, options({ autoPurge: false })).anyWriteMinutes, 620);
+	assert.equal(buildAnalysis([], options()).anyWriteMinutes, 0);
 });
