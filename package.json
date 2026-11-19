@@ -1,6 +1,6 @@
 {
 	"name": "directus-extension-cache-manager",
-	"description": "Manage Directus' response-cache purge behaviour at runtime: CACHE_AUTO_PURGE_IGNORE_LIST, CACHE_AUTO_PURGE and CACHE_SKIP_ALLOWED, based on an analysis of which collections cause cache purges. No config edits or restarts.",
+	"description": "Manage the Directus response cache at runtime: set CACHE_AUTO_PURGE_IGNORE_LIST, CACHE_AUTO_PURGE and CACHE_SKIP_ALLOWED without a restart, based on an analysis of which collections clear the cache",
 	"icon": "cached",
 	"version": "0.1.0",
 	"license": "MIT",
@@ -9,8 +9,12 @@
 		"directus-extension",
 		"directus-extension-bundle",
 		"cache",
+		"cache-manager",
+		"cache-purge",
+		"auto-purge",
+		"ignore-list",
 		"performance",
-		"admin"
+		"module"
 	],
 	"type": "module",
 	"files": [
@@ -18,6 +22,14 @@
 		"LICENSE",
 		"README.md"
 	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/domdus/directus-extension-cache-manager.git"
+	},
+	"bugs": {
+		"url": "https://github.com/domdus/directus-extension-cache-manager/issues"
+	},
+	"homepage": "https://github.com/domdus/directus-extension-cache-manager#readme",
 	"directus:extension": {
 		"type": "bundle",
 		"path": {
@@ -26,9 +38,9 @@
 		},
 		"entries": [
 			{
-				"type": "hook",
-				"name": "cache-manager-hook",
-				"source": "src/hook/index.ts"
+				"type": "module",
+				"name": "cache-manager",
+				"source": "src/module/index.ts"
 			},
 			{
 				"type": "endpoint",
@@ -36,9 +48,9 @@
 				"source": "src/endpoint/index.ts"
 			},
 			{
-				"type": "module",
-				"name": "cache-manager-module",
-				"source": "src/module/index.ts"
+				"type": "hook",
+				"name": "cache-manager-hook",
+				"source": "src/hook/index.ts"
 			}
 		],
 		"host": ">=11.0.0 <13.0.0"

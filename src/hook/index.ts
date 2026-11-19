@@ -3,7 +3,7 @@ import { applyEffective, captureBaseline, describe, ensureSettingsField, markSta
 import { LOG_PREFIX } from '../shared/constants';
 
 /**
- * Captures the config values (config_app.json / env) as baseline and re-applies the stored override at startup.
+ * Captures the values Directus started with (its configuration) as baseline and re-applies the stored override at startup.
  * Overrides live only in the process' env object and are lost on restart, so this must run on every start.
  */
 export default defineHook(({ init }, context) => {

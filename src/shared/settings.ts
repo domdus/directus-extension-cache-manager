@@ -106,7 +106,7 @@ export function sameValues(a: CacheValues, b: CacheValues): boolean {
 
 /**
  * Builds the override to store from the values the admin wants. Settings equal to the config value are stored
- * as null, so a later change in config_app.json comes through for them.
+ * as null, so a later change in the configuration comes through for them.
  */
 export function toOverride(baseline: CacheValues, desired: CacheValues): OverrideInput {
 	return {

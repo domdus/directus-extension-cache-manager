@@ -39,6 +39,11 @@ function publicOrigin(env: Record<string, unknown>): string | null {
 	}
 }
 
+function configPath(env: Record<string, unknown>): string | null {
+	const value = env['CONFIG_PATH'] ?? process.env['CONFIG_PATH'];
+	return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 export default defineEndpoint({
 	id: EXTENSION_ID,
 	handler: (router, context) => {
@@ -84,6 +89,8 @@ export default defineEndpoint({
 					CACHE_STORE: env['CACHE_STORE'] ?? null,
 					CACHE_AUTO_PURGE_IGNORE_LIST: effective.ignoreList,
 				},
+				/** Only shown when Directus was started with CONFIG_PATH; the source is not detected otherwise. */
+				configPath: configPath(env),
 				collections: Object.keys(schema.collections ?? {}).sort(),
 			};
 		}

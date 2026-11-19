@@ -52,43 +52,43 @@ test('purge minutes: union of non-ignored collections, zero with auto purge off'
 	assert.equal(purgeMinutes(new Map([['a', new Set([1, 2])]]), ['x']), 2);
 });
 
-test('analysis mirrors the LIVE shape: a view counter dominates, ignoring it cuts purges', () => {
+test('analysis: a view counter dominates, ignoring it cuts purges', () => {
 	const rows = [
-		...writes('com_videos', range(0, 1031)),
-		...writes('subscriptions', range(1000, 1203)),
-		...writes('checkout_sessions', range(1100, 1270)),
+		...writes('view_counter', range(0, 1031)),
+		...writes('analytics_events', range(1000, 1203)),
+		...writes('checkout_attempts', range(1100, 1270)),
 		...writes('pages', range(0, 20), 20),
 		...writes('directus_users', range(0, 300)),
 	];
-	const analysis = buildAnalysis(rows, options({ candidate: ['com_videos'] }));
+	const analysis = buildAnalysis(rows, options({ candidate: ['view_counter'] }));
 
 	assert.equal(analysis.purgeMinutes, 1270);
-	assert.deepEqual(analysis.collections.map((entry) => entry.collection).slice(0, 2), ['com_videos', 'directus_users']);
+	assert.deepEqual(analysis.collections.map((entry) => entry.collection).slice(0, 2), ['view_counter', 'directus_users']);
 
 	const byName = Object.fromEntries(analysis.collections.map((entry) => [entry.collection, entry]));
-	assert.equal(byName.com_videos.recommended, true);
-	assert.equal(byName.com_videos.minutes, 1031);
-	assert.equal(byName.com_videos.writes, 2062);
-	// Minutes only com_videos writes in: 300..999 (directus_users covers 0..299, subscriptions starts at 1000).
-	assert.equal(byName.com_videos.savedMinutes, 700);
+	assert.equal(byName.view_counter.recommended, true);
+	assert.equal(byName.view_counter.minutes, 1031);
+	assert.equal(byName.view_counter.writes, 2062);
+	// Minutes only view_counter writes in: 300..999 (directus_users covers 0..299, analytics_events starts at 1000).
+	assert.equal(byName.view_counter.savedMinutes, 700);
 	assert.equal(byName.directus_users.recommended, false);
 	assert.equal(byName.directus_users.reason, 'System collection');
 	assert.equal(byName.pages.recommended, false); // 20 / 1440 < 5 %
-	assert.deepEqual(analysis.recommendedList, ['com_videos', 'subscriptions', 'checkout_sessions']);
+	assert.deepEqual(analysis.recommendedList, ['view_counter', 'analytics_events', 'checkout_attempts']);
 
-	// What-if without com_videos: directus_users 0..299 + subscriptions/checkout 1000..1269.
-	assert.deepEqual(analysis.whatIf, { list: ['com_videos'], purgeMinutes: 300 + 270 });
+	// What-if without view_counter: directus_users 0..299 + analytics_events/checkout 1000..1269.
+	assert.deepEqual(analysis.whatIf, { list: ['view_counter'], purgeMinutes: 300 + 270 });
 	assert.equal(analysis.recommendedPurgeMinutes, 300);
 	assert.deepEqual(analysis.minuteSets.pages, range(0, 20));
 });
 
 test('ignored collections are not recommended and save nothing more', () => {
-	const analysis = buildAnalysis([...writes('com_videos', range(0, 500)), ...writes('logs', range(400, 600))], options({ ignoreList: ['com_videos'] }));
-	const videos = analysis.collections.find((entry) => entry.collection === 'com_videos')!;
-	assert.equal(videos.ignored, true);
-	assert.equal(videos.recommended, false);
-	assert.equal(videos.reason, 'Already ignored');
-	assert.equal(videos.savedMinutes, 0);
+	const analysis = buildAnalysis([...writes('view_counter', range(0, 500)), ...writes('logs', range(400, 600))], options({ ignoreList: ['view_counter'] }));
+	const counter = analysis.collections.find((entry) => entry.collection === 'view_counter')!;
+	assert.equal(counter.ignored, true);
+	assert.equal(counter.recommended, false);
+	assert.equal(counter.reason, 'Already ignored');
+	assert.equal(counter.savedMinutes, 0);
 	assert.equal(analysis.purgeMinutes, 200);
 	assert.equal(analysis.whatIf, null);
 });
@@ -116,12 +116,12 @@ test('parseHours clamps and falls back', () => {
 	assert.equal(parseHours('2.7', 24, 168), 2);
 });
 
-const collections = new Set(['com_videos', 'subscriptions', 'directus_activity']);
+const collections = new Set(['view_counter', 'analytics_events', 'directus_activity']);
 
 test('validateInput accepts booleans, null and existing collections', () => {
-	assert.deepEqual(validateInput({ autoPurge: true, skipAllowed: null, ignoreList: [' com_videos ', 'com_videos', 'subscriptions'] }, collections), {
+	assert.deepEqual(validateInput({ autoPurge: true, skipAllowed: null, ignoreList: [' view_counter ', 'view_counter', 'analytics_events'] }, collections), {
 		ok: true,
-		value: { autoPurge: true, skipAllowed: null, ignoreList: ['com_videos', 'subscriptions'] },
+		value: { autoPurge: true, skipAllowed: null, ignoreList: ['view_counter', 'analytics_events'] },
 	});
 	assert.deepEqual(validateInput({}, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null } });
 	assert.deepEqual(validateInput({ ignoreList: [] }, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: [] } });
@@ -135,8 +135,8 @@ test('validateInput rejects bad types, unknown collections and unknown keys', ()
 	};
 	assert.match(fail({ autoPurge: 'true' }).join(), /autoPurge must be/);
 	assert.match(fail({ skipAllowed: 1 }).join(), /skipAllowed must be/);
-	assert.match(fail({ ignoreList: 'com_videos' }).join(), /must be an array/);
-	assert.match(fail({ ignoreList: ['nope', 'com_videos', 'gone'] }).join(), /Unknown collections: nope, gone/);
+	assert.match(fail({ ignoreList: 'view_counter' }).join(), /must be an array/);
+	assert.match(fail({ ignoreList: ['nope', 'view_counter', 'gone'] }).join(), /Unknown collections: nope, gone/);
 	assert.match(fail({ ignoreList: [42] }).join(), /non-empty strings/);
 	assert.match(fail({ ttl: 5 }).join(), /Unknown setting "ttl"/);
 	assert.match(fail(null).join(), /JSON object/);
@@ -157,10 +157,10 @@ test('mergeValues: override wins per setting, null keeps the config value', () =
 
 test('toOverride stores only what differs from config', () => {
 	assert.deepEqual(toOverride(baseline, { ...baseline, ignoreList: ['directus_activity'] }), { autoPurge: null, skipAllowed: null, ignoreList: null });
-	assert.deepEqual(toOverride(baseline, { autoPurge: true, skipAllowed: true, ignoreList: ['com_videos', 'directus_activity'] }), {
+	assert.deepEqual(toOverride(baseline, { autoPurge: true, skipAllowed: true, ignoreList: ['view_counter', 'directus_activity'] }), {
 		autoPurge: null,
 		skipAllowed: true,
-		ignoreList: ['com_videos', 'directus_activity'],
+		ignoreList: ['view_counter', 'directus_activity'],
 	});
 });
 
@@ -182,4 +182,13 @@ test('readValues / applyToEnv round trip on an env object', () => {
 	assert.equal(env.CACHE_SKIP_ALLOWED, true);
 	assert.deepEqual(env.CACHE_AUTO_PURGE_IGNORE_LIST, ['c']);
 	assert.deepEqual(readValues({}), { autoPurge: false, skipAllowed: false, ignoreList: [] });
+});
+
+test('format helpers produce self-explanatory tile texts', async () => {
+	const { formatMinutes, formatPercent, formatHours } = await import('./format');
+	assert.equal(formatMinutes(315, 1440), '315 of 1,440 minutes (21.9 %)');
+	assert.equal(formatMinutes(0, 0), '0 of 0 minutes (0 %)');
+	assert.equal(formatPercent(0.05), '5 %');
+	assert.equal(formatHours(1), 'hour');
+	assert.equal(formatHours(24), '24 hours');
 });
