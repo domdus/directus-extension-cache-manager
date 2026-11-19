@@ -1,5 +1,8 @@
-src
+docs/
+src/
 tsconfig.json
 *.tsbuildinfo
+.gitignore
+.github/
 .DS_Store
-node_modules
+*.zip
