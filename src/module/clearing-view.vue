@@ -139,11 +139,6 @@
 					</div>
 				</div>
 
-				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
-					<template #icon><v-icon name="schedule" /></template>
-					Changes in {{ formatPeriod(analysis.hours) }}
-				</v-divider>
-
 				<div class="toolbar toolbar--end">
 					<div class="add-other">
 						<v-select
@@ -155,6 +150,11 @@
 						/>
 					</div>
 				</div>
+
+				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
+					<template #icon><v-icon name="schedule" /></template>
+					Changes in {{ formatPeriod(analysis.hours) }}
+				</v-divider>
 
 				<div class="table-wrap">
 				<table class="analysis">
