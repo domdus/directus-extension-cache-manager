@@ -122,11 +122,13 @@
 				<div class="toolbar">
 					<span class="subdued">All numbers: {{ formatPeriod(analysis.hours) }}.</span>
 					<div class="add-other">
-						<select v-model="otherCollection" class="native-select" aria-label="Another collection">
-							<option value="">Select another collection…</option>
-							<option v-for="name in otherCollections" :key="name" :value="name">{{ name }}</option>
-						</select>
-						<v-button small secondary :disabled="!otherCollection" @click="addOther">Select</v-button>
+						<v-select
+							:model-value="null"
+							:items="otherCollectionChoices"
+							:disabled="!otherCollectionChoices.length"
+							placeholder="Select another collection…"
+							@update:model-value="addOther"
+						/>
 					</div>
 				</div>
 
@@ -198,7 +200,6 @@ const { state, analysis, draft, draftSet, hours, busy, dirty, saving, loadingAna
 	useCacheManager();
 
 const hourItems = [1, 6, 24, 72, 168].map((value) => ({ text: `Last ${formatWindow(value)}`, value }));
-const otherCollection = ref('');
 
 function share(minutes: number): number {
 	const total = analysis.value?.windowMinutes ?? 0;
@@ -235,9 +236,12 @@ const otherCollections = computed(() => {
 	return (state.value?.collections ?? []).filter((name) => !shown.has(name));
 });
 
-function addOther() {
-	if (otherCollection.value) toggle(otherCollection.value, true);
-	otherCollection.value = '';
+/** Collections without changes in the period, for the picker above the table. */
+const otherCollectionChoices = computed(() => otherCollections.value.map((name) => ({ text: name, value: name })));
+
+/** Picking a collection selects it right away (no separate button). */
+function addOther(name: string | null) {
+	if (name) toggle(name, true);
 }
 
 watch(hours, loadAnalysis);
@@ -284,16 +288,8 @@ onMounted(async () => {
 	margin-bottom: 16px;
 }
 .add-other {
-	display: flex;
-	align-items: center;
-	gap: 12px;
-}
-.native-select {
-	padding: 6px 8px;
-	border: var(--theme--border-width, 1px) solid var(--theme--form--field--input--border-color, var(--theme--border-color));
-	border-radius: var(--theme--border-radius);
-	background: var(--theme--form--field--input--background, var(--theme--background));
-	color: var(--theme--foreground);
+	width: 100%;
+	max-width: 320px;
 }
 .tiles {
 	display: grid;
