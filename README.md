@@ -46,7 +46,7 @@ npm run build
 
 1. Open **Cache Manager → Cache Clearing** and pick a time period (last hour to last 7 days).
 2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared in 296 minutes of the last 24 hours." Lower is better. If collections are already ignored, the tile also shows how often it would be cleared without them, for example "Without the ignored collections: 49 times per hour".
-3. Tick collections in the **Ignore** column, or click **Ignore suggestion** in the **Suggestion** tile. The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
+3. Select collections in the table and click **Ignore selected** (or **Stop ignoring selected**), pick one with **Ignore another collection…**, or click **Ignore suggestion** in the **Suggestion** tile. The **Status** column shows what Save & apply will change ("Will be ignored", "Will clear cache"). The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
 4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share your unsaved changes. A notice lists what is not saved yet.
 5. Click **Save & apply** (top right, on either page). It is used right away.
 
@@ -80,7 +80,7 @@ Don't ignore collections that decide what users may see or buy, like subscriptio
 - A minute counts as "cleared" when at least one collection that is not ignored changed in it. Several changes in the same minute count as one.
 - **How often the cache is cleared** shows how many times per hour the cache was cleared in the chosen period (several clears in the same minute count once). Lower is better.
 - **Changed in** shows, per collection, the minutes with at least one change, and how many that is per hour (for example "288 min · ~12/h").
-- **Status** shows "Ignored" for collections ignored now and "Clears cache" for the others.
+- **Status** shows "Ignored" for collections ignored now, "Clears cache" for the others and "Not measured" for collections without activity tracking. Unsaved changes show as "Will be ignored" or "Will clear cache".
 - **Effect if ignored** shows how much less often the cache would be cleared if you also ignored that collection. A bigger drop is better.
 - The numbers come from the activity log. Changes that are not logged there can't be counted, but they still clear the cache:
   - Collections with **Activity & Revision Tracking** set to "Do not track anything". They are listed at the end of the table as **Not measured**, with a **Turn on tracking** button that opens the collection in the Data Model. They are left out of all numbers and suggestions, and tile 1 names them ("Not measured: 1 collection (…). The real number can be higher.").

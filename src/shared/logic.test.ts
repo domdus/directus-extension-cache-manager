@@ -417,3 +417,24 @@ test('retention: limited only when enabled, warning when shorter than the period
 	assert.equal(retentionWarning(2160, 168), null);
 	assert.equal(retentionWarning(null, 168), null);
 });
+
+test('rowState shows the state in use and what Save & apply will change', async () => {
+	const { rowState, ROW_STATE_LABELS } = await import('./selection');
+	const draft = new Set(['a', 'new']);
+	const effective = new Set(['a', 'old']);
+	assert.equal(rowState('a', true, draft, effective), 'ignored');
+	assert.equal(rowState('new', true, draft, effective), 'will-ignore');
+	assert.equal(rowState('old', true, draft, effective), 'will-clear');
+	assert.equal(rowState('pages', true, draft, effective), 'clears');
+	assert.equal(rowState('audit', false, draft, effective), 'unmeasured');
+	assert.equal(rowState('old', false, draft, effective), 'will-clear');
+	assert.equal(ROW_STATE_LABELS['will-ignore'], 'Will be ignored');
+	assert.equal(ROW_STATE_LABELS['will-clear'], 'Will clear cache');
+});
+
+test('selectionChanges splits the selection into what each action changes', async () => {
+	const { selectionChanges } = await import('./selection');
+	assert.deepEqual(selectionChanges(['a', 'b', 'c', 'a'], ['b']), { toIgnore: ['a', 'c'], toStop: ['b'] });
+	assert.deepEqual(selectionChanges([], ['b']), { toIgnore: [], toStop: [] });
+	assert.deepEqual(selectionChanges(['b'], ['b']), { toIgnore: [], toStop: ['b'] });
+});

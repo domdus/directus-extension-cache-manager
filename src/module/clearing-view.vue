@@ -110,7 +110,7 @@
 								The cache would have been cleared in {{ formatMinutes(whatIf, analysis.windowMinutes) }}. Lower is better.
 							</span>
 						</template>
-						<span v-else class="explain">No changes yet. Tick collections in the Ignore column to see the effect here.</span>
+						<span v-else class="explain">No changes yet. Select collections in the table and click Ignore selected to see the effect here.</span>
 					</div>
 
 					<div class="tile">
@@ -139,7 +139,15 @@
 					</div>
 				</div>
 
-				<div class="toolbar toolbar--end">
+				<div class="toolbar">
+					<div class="selection-actions">
+						<v-button small secondary :disabled="!changes.toIgnore.length" @click="ignoreSelected">
+							Ignore selected ({{ changes.toIgnore.length }})
+						</v-button>
+						<v-button small secondary :disabled="!changes.toStop.length" @click="stopIgnoringSelected">
+							Stop ignoring selected ({{ changes.toStop.length }})
+						</v-button>
+					</div>
 					<div class="add-other">
 						<v-select
 							:model-value="null"
@@ -160,7 +168,14 @@
 				<table class="analysis">
 					<thead>
 						<tr>
-							<th class="check-col">Ignore</th>
+							<th class="check-col">
+								<v-checkbox
+									:model-value="allSelected"
+									:indeterminate="someSelected"
+									aria-label="Select all"
+									@update:model-value="toggleSelectAll"
+								/>
+							</th>
 							<th>Collection</th>
 							<th class="num">Changes</th>
 							<th class="num">Changed in</th>
@@ -171,15 +186,25 @@
 					</thead>
 					<tbody>
 						<tr v-for="row in rows" :key="row.collection">
-							<td class="check-col"><v-checkbox :model-value="draftSet.has(row.collection)" @update:model-value="toggle(row.collection, $event)" /></td>
+							<td class="check-col">
+								<v-checkbox
+									:model-value="selected.includes(row.collection)"
+									:aria-label="`Select ${row.collection}`"
+									@update:model-value="(checked) => toggleRow(row.collection, checked)"
+								/>
+							</td>
 							<td class="name">{{ row.collection }}</td>
 							<td class="num">{{ row.measured ? formatNumber(row.writes) : '–' }}</td>
 							<td class="num">{{ row.measured ? formatMinutesShort(row.minutes, analysis.windowMinutes) : '–' }}</td>
 							<td class="num">{{ row.ignored || !row.measured ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
 							<td>
-								<span v-if="row.ignored" class="state state--ignored">Ignored</span>
-								<span v-else-if="!row.measured" v-tooltip="notMeasuredTooltip" class="state">Not measured</span>
-								<span v-else class="state" :class="{ 'state--clears': row.savedMinutes * 60 >= analysis.windowMinutes }">Clears cache</span>
+								<span
+									v-tooltip="stateOf(row) === 'unmeasured' ? notMeasuredTooltip : undefined"
+									class="state"
+									:class="stateClass(row)"
+								>
+									{{ ROW_STATE_LABELS[stateOf(row)] }}
+								</span>
 							</td>
 							<td>
 								<v-button
@@ -216,6 +241,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { buildRows, retentionWarning, unmeasuredLine, type TableRow } from '../shared/coverage';
+import { ROW_STATE_LABELS, rowState, selectionChanges, type RowState } from '../shared/selection';
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
 import {
 	formatMinutes,
@@ -252,6 +278,55 @@ const notMeasuredLine = computed(() => unmeasuredLine(analysis.value?.unmeasured
 const retentionNotice = computed(() =>
 	analysis.value ? retentionWarning(analysis.value.activityRetentionHours ?? null, analysis.value.hours) : null,
 );
+/* Row selection is local to this page and only feeds the two action buttons. */
+const selected = ref<string[]>([]);
+const allSelected = computed(() => rows.value.length > 0 && selected.value.length === rows.value.length);
+const someSelected = computed(() => selected.value.length > 0 && !allSelected.value);
+const changes = computed(() => selectionChanges(selected.value, draft.ignoreList));
+const effectiveSet = computed(() => new Set(state.value?.effective.ignoreList ?? []));
+
+function toggleSelectAll(checked: boolean) {
+	selected.value = checked ? rows.value.map((row) => row.collection) : [];
+}
+
+function toggleRow(collection: string, checked: boolean) {
+	if (checked) {
+		if (!selected.value.includes(collection)) selected.value = [...selected.value, collection];
+	} else {
+		selected.value = selected.value.filter((name) => name !== collection);
+	}
+}
+
+function ignoreSelected() {
+	add(changes.value.toIgnore);
+	selected.value = [];
+}
+
+function stopIgnoringSelected() {
+	for (const name of changes.value.toStop) toggle(name, false);
+	selected.value = [];
+}
+
+function stateOf(row: TableRow): RowState {
+	return rowState(row.collection, row.measured, draftSet.value, effectiveSet.value);
+}
+
+function stateClass(row: TableRow): Record<string, boolean> {
+	const value = stateOf(row);
+	return {
+		'state--ignored': value === 'ignored',
+		'state--clears': value === 'clears' && row.savedMinutes * 60 >= (analysis.value?.windowMinutes ?? Infinity),
+		'state--pending': value === 'will-ignore' || value === 'will-clear',
+		'state--pending-ignore': value === 'will-ignore',
+		'state--pending-clear': value === 'will-clear',
+	};
+}
+
+// A new analysis (period change, refresh, save) starts with nothing selected.
+watch(analysis, () => {
+	selected.value = [];
+});
+
 const notMeasuredTooltip = "Activity tracking is off for this collection, so its changes can't be counted. They can still clear the cache.";
 
 const addableRecommendations = computed(() => (analysis.value?.recommendedList ?? []).filter((name) => !draftSet.value.has(name)));
@@ -413,6 +488,7 @@ th {
 	width: 36px;
 	padding-left: 8px;
 	padding-right: 4px;
+	vertical-align: middle;
 	white-space: nowrap;
 }
 .check-col :deep(.v-checkbox) {
@@ -443,6 +519,26 @@ th {
 /* Clears the cache at least once per hour on average. */
 .state--clears {
 	color: var(--theme--warning);
+}
+/* Not saved yet: what Save & apply will change. */
+.state--pending {
+	font-style: italic;
+}
+.state--pending::before {
+	background: transparent;
+	border: 2px solid currentColor;
+	box-sizing: border-box;
+}
+.state--pending-ignore {
+	color: var(--theme--success);
+}
+.state--pending-clear {
+	color: var(--theme--warning);
+}
+.selection-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
 }
 .badge {
 	display: inline-block;
