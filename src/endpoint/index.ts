@@ -1,6 +1,8 @@
 import { defineEndpoint } from '@directus/extensions-sdk';
 import type { NextFunction, Request, Response } from 'express';
 import { buildAnalysis, parseHours, toBuckets } from '../shared/analysis';
+import { activityRetentionHours, unmeasuredCollections } from '../shared/coverage';
+import { parseDuration } from '../shared/duration';
 import { DEFAULT_HOURS, EXTENSION_ID, LOG_PREFIX, MAX_HOURS, WRITE_ACTIONS } from '../shared/constants';
 import { isEmptyOverride, mergeValues, readValues, sameValues, validateInput, type StoredOverride } from '../shared/settings';
 import {
@@ -140,6 +142,8 @@ export default defineEndpoint({
 					autoPurge: effective.autoPurge,
 					editorHeuristic: Boolean(origin),
 					candidate,
+					unmeasured: unmeasuredCollections((await ctx.getSchema()).collections ?? {}),
+					activityRetentionHours: activityRetentionHours(env['RETENTION_ENABLED'], parseDuration(env['ACTIVITY_RETENTION'])),
 				});
 			}),
 		);

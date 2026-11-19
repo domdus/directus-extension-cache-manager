@@ -82,7 +82,10 @@ Don't ignore collections that decide what users may see or buy, like subscriptio
 - **Changed in** shows, per collection, the minutes with at least one change, and how many that is per hour (for example "288 min · ~12/h").
 - **Status** shows "Ignored" for collections ignored now and "Clears cache" for the others.
 - **Effect if ignored** shows how much less often the cache would be cleared if you also ignored that collection. A bigger drop is better.
-- The numbers come from the activity log. Some automatic changes, for example from some Flows, are not in the activity log. The real numbers can be higher.
+- The numbers come from the activity log. Changes that are not logged there can't be counted, but they still clear the cache:
+  - Collections with **Activity & Revision Tracking** set to "Do not track anything". They are listed at the end of the table as **Not measured**, with a **Turn on tracking** button that opens the collection in the Data Model. They are left out of all numbers and suggestions, and tile 1 names them ("Not measured: 1 collection (…). The real number can be higher.").
+  - Changes made by Flows that run without activity tracking. These can't be detected.
+- If Directus deletes old activity (`RETENTION_ENABLED` with `ACTIVITY_RETENTION`), a time period longer than that shows less than actually happened. The page shows a warning then.
 
 ## Suggestions
 
@@ -95,6 +98,7 @@ A collection is suggested for ignoring when all of these are true (limits in `sr
 
 ## What to know
 
+- **Not everything can be counted.** Collections without activity tracking and some Flow changes are not in the activity log, and Directus may delete old activity. The Cache Clearing page says when this affects the numbers.
 - **Several servers.** Saving changes the settings on the server that handles the save. If Directus runs on several servers, restart the others after saving. They use the saved settings when they start. The Status page warns when the settings in use don't match.
 - **Saving clears the cache once**, because it writes to the project settings.
 - **Databases.** The Cache Clearing page works with PostgreSQL and MySQL. On other databases it shows an error. The settings still work.

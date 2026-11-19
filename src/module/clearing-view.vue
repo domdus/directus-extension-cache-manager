@@ -28,8 +28,19 @@
 					clear the cache.
 				</p>
 				<p class="sidebar-text">
-					The numbers come from the activity log. Some automatic changes, for example from some Flows, are not in the
-					activity log. The real numbers can be higher.
+					The numbers come from the activity log. Changes that are not logged there can't be counted, but they still clear
+					the cache:
+				</p>
+				<ul class="sidebar-list">
+					<li>
+						collections with "Activity &amp; Revision Tracking" turned off. They are listed as "Not measured" at the end of
+						the table;
+					</li>
+					<li>changes made by Flows that run without activity tracking. These can't be detected.</li>
+				</ul>
+				<p class="sidebar-text">
+					If Directus deletes old activity (retention), a long time period shows less than actually happened. The page
+					warns you when that is the case.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="strategy" icon="lightbulb" title="What to ignore">
@@ -68,6 +79,8 @@
 			<div v-if="!analysis && loadingAnalysis" class="loading"><v-progress-circular indeterminate /></div>
 
 			<template v-if="analysis">
+				<v-notice v-if="retentionNotice" type="warning" class="notice">{{ retentionNotice }}</v-notice>
+
 				<div class="tiles">
 					<div class="tile">
 						<span class="label">How often the cache is cleared</span>
@@ -78,6 +91,7 @@
 						<span v-if="state?.effective.ignoreList.length" class="unit">
 							Without the ignored collections: {{ formatTimesPerHour(analysis.anyWriteMinutes, analysis.windowMinutes) }} times per hour
 						</span>
+						<span v-if="notMeasuredLine" class="unit">{{ notMeasuredLine }}</span>
 						<span class="explain">
 							The cache was cleared in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}.
 							Lower is better: after clearing, Directus has to load everything from the database again.
@@ -159,15 +173,25 @@
 						<tr v-for="row in rows" :key="row.collection">
 							<td class="check-col"><v-checkbox :model-value="draftSet.has(row.collection)" @update:model-value="toggle(row.collection, $event)" /></td>
 							<td class="name">{{ row.collection }}</td>
-							<td class="num">{{ formatNumber(row.writes) }}</td>
-							<td class="num">{{ formatMinutesShort(row.minutes, analysis.windowMinutes) }}</td>
-							<td class="num">{{ row.ignored ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
+							<td class="num">{{ row.measured ? formatNumber(row.writes) : '–' }}</td>
+							<td class="num">{{ row.measured ? formatMinutesShort(row.minutes, analysis.windowMinutes) : '–' }}</td>
+							<td class="num">{{ row.ignored || !row.measured ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
 							<td>
 								<span v-if="row.ignored" class="state state--ignored">Ignored</span>
+								<span v-else-if="!row.measured" v-tooltip="notMeasuredTooltip" class="state">Not measured</span>
 								<span v-else class="state" :class="{ 'state--clears': row.savedMinutes * 60 >= analysis.windowMinutes }">Clears cache</span>
 							</td>
 							<td>
-								<span v-if="row.recommended" class="badge">Suggested</span>
+								<v-button
+									v-if="!row.measured && !row.ignored"
+									v-tooltip="`Settings → Data Model → ${row.collection} → Activity & Revision Tracking`"
+									x-small
+									secondary
+									:to="`/settings/data-model/${row.collection}`"
+								>
+									Turn on tracking
+								</v-button>
+								<span v-else-if="row.recommended" class="badge">Suggested</span>
 								<span v-else-if="!row.ignored" class="subdued">{{ row.reason }}</span>
 							</td>
 						</tr>
@@ -191,7 +215,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import type { CollectionStats } from '../shared/analysis';
+import { buildRows, retentionWarning, unmeasuredLine, type TableRow } from '../shared/coverage';
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
 import {
 	formatMinutes,
@@ -216,27 +240,19 @@ const hourItems = [1, 6, 24, 72, 168].map((value) => ({ text: `Last ${formatWind
 
 
 /** Collections with changes plus every ignored or configured collection, so nothing ignored is hidden. */
-const rows = computed<CollectionStats[]>(() => {
-	const list = analysis.value?.collections ?? [];
-	const known = new Set(list.map((row) => row.collection));
-	const effective = new Set(state.value?.effective.ignoreList ?? []);
-	const extra = new Set([...draft.ignoreList, ...effective, ...(state.value?.baseline.ignoreList ?? [])]);
-	const empty = [...extra]
-		.filter((name) => !known.has(name))
-		.sort()
-		.map((collection) => ({
-			collection,
-			writes: 0,
-			minutes: 0,
-			share: 0,
-			editorWrites: 0,
-			ignored: effective.has(collection),
-			recommended: false,
-			reason: 'No changes in this time',
-			savedMinutes: 0,
-		}));
-	return [...list, ...empty];
-});
+const rows = computed<TableRow[]>(() =>
+	buildRows(
+		analysis.value?.collections ?? [],
+		[...draft.ignoreList, ...(state.value?.effective.ignoreList ?? []), ...(state.value?.baseline.ignoreList ?? [])],
+		analysis.value?.unmeasured ?? [],
+		state.value?.effective.ignoreList ?? [],
+	),
+);
+const notMeasuredLine = computed(() => unmeasuredLine(analysis.value?.unmeasured ?? [], state.value?.effective.ignoreList ?? []));
+const retentionNotice = computed(() =>
+	analysis.value ? retentionWarning(analysis.value.activityRetentionHours ?? null, analysis.value.hours) : null,
+);
+const notMeasuredTooltip = "Activity tracking is off for this collection, so its changes can't be counted. They can still clear the cache.";
 
 const addableRecommendations = computed(() => (analysis.value?.recommendedList ?? []).filter((name) => !draftSet.value.has(name)));
 const otherCollections = computed(() => {

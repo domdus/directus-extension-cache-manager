@@ -349,3 +349,71 @@ test('anyWriteMinutes counts minutes with any change, ignored or not', () => {
 	assert.equal(buildAnalysis(rows, options({ autoPurge: false })).anyWriteMinutes, 620);
 	assert.equal(buildAnalysis([], options()).anyWriteMinutes, 0);
 });
+
+test('unmeasuredCollections lists user tables with tracking off', async () => {
+	const { unmeasuredCollections } = await import('./coverage');
+	assert.deepEqual(
+		unmeasuredCollections({
+			transactions: { accountability: null },
+			articles: { accountability: 'all' },
+			logins: { accountability: 'activity' },
+			directus_sessions: { accountability: null },
+			audit: { accountability: null },
+			legacy: {},
+		}),
+		['audit', 'transactions'],
+	);
+});
+
+test('unmeasuredLine names collections that still clear the cache', async () => {
+	const { unmeasuredLine, nameList } = await import('./coverage');
+	assert.equal(unmeasuredLine(['transactions'], []), 'Not measured: 1 collection (transactions). The real number can be higher.');
+	assert.equal(unmeasuredLine(['a', 'b'], []), 'Not measured: 2 collections (a, b). The real number can be higher.');
+	assert.equal(unmeasuredLine(['a', 'b', 'c', 'd', 'e'], ['b']), 'Not measured: 4 collections (a, c, d and 1 more). The real number can be higher.');
+	assert.equal(unmeasuredLine(['a'], ['a']), null);
+	assert.equal(unmeasuredLine([], []), null);
+	assert.equal(nameList(['a', 'b', 'c']), 'a, b, c');
+	assert.equal(nameList(['a', 'b', 'c', 'd', 'e', 'f']), 'a, b, c and 3 more');
+});
+
+test('buildRows puts not measured collections last and keeps them out of measured rows', async () => {
+	const { buildRows } = await import('./coverage');
+	const analysis = buildAnalysis(
+		[...writes('view_counter', range(0, 500)), ...writes('transactions', range(0, 50)), ...writes('pages', range(0, 10))],
+		options({ ignoreList: ['view_counter'], unmeasured: ['audit', 'transactions'] }),
+	);
+	// Old activity of a not measured collection is left out of every number.
+	assert.equal(analysis.purgeMinutes, 10);
+	assert.equal(analysis.minuteSets.transactions, undefined);
+	assert.ok(!analysis.recommendedList.includes('transactions'));
+	assert.deepEqual(analysis.unmeasured, ['audit', 'transactions']);
+
+	const rows = buildRows(analysis.collections, ['view_counter', 'logs', 'audit'], analysis.unmeasured, ['view_counter', 'audit']);
+	assert.deepEqual(
+		rows.map((row) => [row.collection, row.measured, row.ignored]),
+		[
+			['view_counter', true, true],
+			['pages', true, false],
+			['logs', true, false],
+			['audit', false, true],
+			['transactions', false, false],
+		],
+	);
+	assert.equal(rows.find((row) => row.collection === 'logs')!.reason, 'No changes in this time');
+});
+
+test('retention: limited only when enabled, warning when shorter than the period', async () => {
+	const { activityRetentionHours, retentionWarning } = await import('./coverage');
+	const { parseDuration } = await import('./duration');
+	assert.equal(activityRetentionHours(true, parseDuration('3d')), 72);
+	assert.equal(activityRetentionHours('true', parseDuration('90d')), 2160);
+	assert.equal(activityRetentionHours(false, parseDuration('3d')), null);
+	assert.equal(activityRetentionHours(true, null), null);
+	assert.equal(activityRetentionHours(true, 0), null);
+	assert.equal(retentionWarning(72, 168), 'Directus only keeps 3 days of activity. "Last 7 days" shows less than actually happened.');
+	assert.equal(retentionWarning(12, 24), 'Directus only keeps 12 hours of activity. "Last 24 hours" shows less than actually happened.');
+	assert.equal(retentionWarning(0.5, 1), 'Directus only keeps 30 minutes of activity. "Last 1 hour" shows less than actually happened.');
+	assert.equal(retentionWarning(72, 72), null);
+	assert.equal(retentionWarning(2160, 168), null);
+	assert.equal(retentionWarning(null, 168), null);
+});

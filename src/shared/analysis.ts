@@ -45,6 +45,10 @@ export type Analysis = {
 	recommendedPurgeMinutes: number;
 	/** Purge minutes for the `candidate` list, when one was given. */
 	whatIf: { list: string[]; purgeMinutes: number } | null;
+	/** Collections with activity tracking off: not counted anywhere, but they still clear the cache. */
+	unmeasured: string[];
+	/** Hours of activity Directus keeps (retention), null when not limited. */
+	activityRetentionHours: number | null;
 };
 
 export type MinuteSets = Map<string, Set<number>>;
@@ -113,11 +117,15 @@ export type AnalysisOptions = {
 	autoPurge: boolean;
 	editorHeuristic: boolean;
 	candidate?: string[] | null;
+	/** Collections that can't be measured; their (old) activity is left out of every number. */
+	unmeasured?: string[];
+	activityRetentionHours?: number | null;
 };
 
 export function buildAnalysis(rows: ActivityBucket[], options: AnalysisOptions): Analysis {
 	const { windowMinutes, ignoreList, autoPurge } = options;
-	const grouped = aggregate(rows, windowMinutes);
+	const skip = new Set(options.unmeasured ?? []);
+	const grouped = aggregate(skip.size ? rows.filter((row) => !skip.has(row.collection)) : rows, windowMinutes);
 	const sets: MinuteSets = new Map([...grouped].map(([collection, entry]) => [collection, entry.minutes]));
 	const ignored = new Set(ignoreList);
 	const current = purgeMinutes(sets, ignoreList, autoPurge);
@@ -146,6 +154,8 @@ export function buildAnalysis(rows: ActivityBucket[], options: AnalysisOptions):
 		recommendedList,
 		recommendedPurgeMinutes: purgeMinutes(sets, [...ignoreList, ...recommendedList], autoPurge),
 		whatIf: candidate ? { list: candidate, purgeMinutes: purgeMinutes(sets, candidate, autoPurge) } : null,
+		unmeasured: [...skip].sort(),
+		activityRetentionHours: options.activityRetentionHours ?? null,
 	};
 }
 
