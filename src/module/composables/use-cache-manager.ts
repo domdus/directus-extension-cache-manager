@@ -2,6 +2,7 @@ import { useApi } from '@directus/extensions-sdk';
 import { computed, reactive, ref } from 'vue';
 import { purgeMinutes, type Analysis } from '../../shared/analysis';
 import { DEFAULT_HOURS, EXTENSION_ID } from '../../shared/constants';
+import { isValidTtl } from '../../shared/duration';
 import { sameList, sameValues, toOverride, type CacheValues, type StoredOverride } from '../../shared/settings';
 
 export type CacheState = {
@@ -23,7 +24,7 @@ const base = `/${EXTENSION_ID}`;
  */
 const state = ref<CacheState | null>(null);
 const analysis = ref<Analysis | null>(null);
-const draft = reactive<CacheValues>({ autoPurge: true, skipAllowed: false, ignoreList: [] });
+const draft = reactive<CacheValues>({ autoPurge: true, skipAllowed: false, ignoreList: [], ttl: '' });
 const hours = ref(DEFAULT_HOURS);
 const loadingState = ref(false);
 const loadingAnalysis = ref(false);
@@ -40,6 +41,7 @@ function resetDraft() {
 	draft.autoPurge = state.value.effective.autoPurge;
 	draft.skipAllowed = state.value.effective.skipAllowed;
 	draft.ignoreList = [...state.value.effective.ignoreList];
+	draft.ttl = state.value.effective.ttl;
 }
 
 export function useCacheManager() {
@@ -47,6 +49,9 @@ export function useCacheManager() {
 
 	const busy = computed(() => saving.value || loadingState.value || loadingAnalysis.value);
 	const dirty = computed(() => !!state.value && !sameValues(draft, state.value.effective));
+	const ttlValid = computed(() => isValidTtl(draft.ttl));
+	/** Something changed and every value can be saved. */
+	const canSave = computed(() => dirty.value && ttlValid.value);
 	const listDirty = computed(() => !!state.value && !sameList(draft.ignoreList, state.value.effective.ignoreList));
 	const draftSet = computed(() => new Set(draft.ignoreList));
 	const whatIf = computed(() => (analysis.value ? purgeMinutes(analysis.value.minuteSets, draft.ignoreList, draft.autoPurge) : 0));
@@ -87,7 +92,7 @@ export function useCacheManager() {
 	}
 
 	async function save() {
-		if (!state.value) return;
+		if (!state.value || !ttlValid.value) return;
 		saving.value = true;
 		error.value = null;
 		message.value = null;
@@ -136,6 +141,8 @@ export function useCacheManager() {
 		saving,
 		busy,
 		dirty,
+		canSave,
+		ttlValid,
 		listDirty,
 		whatIf,
 		error,

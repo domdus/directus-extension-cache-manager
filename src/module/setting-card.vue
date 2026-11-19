@@ -14,6 +14,10 @@
 			<span v-else class="value">{{ effective }}</span>
 		</div>
 
+		<div v-if="$slots.edit" class="edit">
+			<slot name="edit" />
+		</div>
+
 		<div class="lines">
 			<template v-if="readonly">
 				<span>From the configuration. Can't be changed here.</span>
@@ -103,6 +107,11 @@ function text(value: Value | null | undefined): string {
 	font-size: 12px;
 	color: var(--theme--foreground-subdued);
 	overflow-wrap: anywhere;
+}
+.edit {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
 }
 .card-actions {
 	display: flex;

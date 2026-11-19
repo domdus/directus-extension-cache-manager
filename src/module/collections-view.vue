@@ -1,5 +1,5 @@
 <template>
-	<private-view title="Analysis" icon="insights">
+	<private-view title="Collections" icon="list_alt">
 		<template #headline>
 			<v-breadcrumb :items="[{ name: 'Cache Manager', to: '/cache-manager' }]" />
 		</template>
@@ -12,7 +12,7 @@
 			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loadingAnalysis" :disabled="saving" @click="loadAnalysis">
 				<v-icon name="refresh" small />
 			</v-button>
-			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!dirty || busy" @click="save">
+			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!canSave || busy" @click="save">
 				<v-icon name="check" small />
 			</v-button>
 		</template>
@@ -54,6 +54,11 @@
 			<v-notice v-if="error" type="danger" class="notice">{{ error }}</v-notice>
 			<v-notice v-if="message" type="success" class="notice">{{ message }}</v-notice>
 			<pending-changes />
+
+			<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
+				<template #icon><v-icon name="list_alt" /></template>
+				Which collections clear the cache
+			</v-divider>
 
 			<div class="toolbar">
 				<v-select v-model="hours" :items="hourItems" inline />
@@ -196,9 +201,10 @@ import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
 const pageClass = usePageClass();
-const { state, analysis, draft, draftSet, hours, busy, dirty, saving, loadingAnalysis, whatIf, error, message, loadState, loadAnalysis, save, toggle, add } =
+const { state, analysis, draft, draftSet, hours, busy, dirty, canSave, saving, loadingAnalysis, whatIf, error, message, loadState, loadAnalysis, save, toggle, add } =
 	useCacheManager();
 
+const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
 const hourItems = [1, 6, 24, 72, 168].map((value) => ({ text: `Last ${formatWindow(value)}`, value }));
 
 function share(minutes: number): number {
@@ -253,6 +259,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.section-divider {
+	margin-bottom: 12px;
+}
 .page-container {
 	padding: var(--content-padding);
 	padding-block-end: var(--content-padding-bottom);

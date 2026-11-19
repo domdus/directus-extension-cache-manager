@@ -1,10 +1,13 @@
 import { MAX_LIST_LENGTH } from './constants';
+import { isValidTtl, sameDuration, TTL_ERROR } from './duration';
 
-/** The three env values this extension manages. */
+/** The env values this extension manages. */
 export type CacheValues = {
 	autoPurge: boolean;
 	skipAllowed: boolean;
 	ignoreList: string[];
+	/** CACHE_TTL as Directus reads it: a duration like "5m" or plain milliseconds as text. */
+	ttl: string;
 };
 
 /** What is stored in directus_settings.cache_manager. `null` = use the config value. */
@@ -12,17 +15,28 @@ export type StoredOverride = {
 	autoPurge: boolean | null;
 	skipAllowed: boolean | null;
 	ignoreList: string[] | null;
+	ttl: string | null;
 	updatedAt: string | null;
 	updatedBy: string | null;
 };
 
-export type OverrideInput = Pick<StoredOverride, 'autoPurge' | 'skipAllowed' | 'ignoreList'>;
+export type OverrideInput = Pick<StoredOverride, 'autoPurge' | 'skipAllowed' | 'ignoreList' | 'ttl'>;
 
 export const ENV_KEYS = {
 	autoPurge: 'CACHE_AUTO_PURGE',
 	skipAllowed: 'CACHE_SKIP_ALLOWED',
 	ignoreList: 'CACHE_AUTO_PURGE_IGNORE_LIST',
+	ttl: 'CACHE_TTL',
 } as const;
+
+/** Directus' default when CACHE_TTL is not configured. */
+export const DEFAULT_TTL = '5m';
+
+function toTtl(value: unknown): string | null {
+	if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+	if (typeof value === 'string' && value.trim()) return value.trim();
+	return null;
+}
 
 type Env = Record<string, unknown>;
 
@@ -48,6 +62,7 @@ export function readValues(env: Env): CacheValues {
 		autoPurge: toBool(env[ENV_KEYS.autoPurge]),
 		skipAllowed: toBool(env[ENV_KEYS.skipAllowed]),
 		ignoreList: toList(env[ENV_KEYS.ignoreList]),
+		ttl: toTtl(env[ENV_KEYS.ttl]) ?? DEFAULT_TTL,
 	};
 }
 
@@ -56,6 +71,8 @@ export function applyToEnv(env: Env, values: CacheValues) {
 	env[ENV_KEYS.autoPurge] = values.autoPurge;
 	env[ENV_KEYS.skipAllowed] = values.skipAllowed;
 	env[ENV_KEYS.ignoreList] = [...values.ignoreList];
+	// Directus reads CACHE_TTL with getMilliseconds(), which accepts "1h" as well as "300000".
+	env[ENV_KEYS.ttl] = values.ttl;
 }
 
 /** Parses the stored field (object from Postgres, string from MySQL/SQLite). Invalid content → null. */
@@ -75,6 +92,7 @@ export function parseStored(raw: unknown): StoredOverride | null {
 		autoPurge: bool(obj.autoPurge),
 		skipAllowed: bool(obj.skipAllowed),
 		ignoreList: Array.isArray(obj.ignoreList) ? toList(obj.ignoreList) : null,
+		ttl: isValidTtl(toTtl(obj.ttl)) ? toTtl(obj.ttl) : null,
 		updatedAt: typeof obj.updatedAt === 'string' ? obj.updatedAt : null,
 		updatedBy: typeof obj.updatedBy === 'string' ? obj.updatedBy : null,
 	};
@@ -82,7 +100,7 @@ export function parseStored(raw: unknown): StoredOverride | null {
 }
 
 export function isEmptyOverride(stored: OverrideInput | null): boolean {
-	return !stored || (stored.autoPurge === null && stored.skipAllowed === null && stored.ignoreList === null);
+	return !stored || (stored.autoPurge === null && stored.skipAllowed === null && stored.ignoreList === null && (stored.ttl ?? null) === null);
 }
 
 /** Effective values: the override wins per setting, null falls back to the config baseline. */
@@ -91,6 +109,7 @@ export function mergeValues(baseline: CacheValues, stored: OverrideInput | null)
 		autoPurge: stored?.autoPurge ?? baseline.autoPurge,
 		skipAllowed: stored?.skipAllowed ?? baseline.skipAllowed,
 		ignoreList: stored?.ignoreList ? [...stored.ignoreList] : [...baseline.ignoreList],
+		ttl: stored?.ttl ?? baseline.ttl,
 	};
 }
 
@@ -101,7 +120,7 @@ export function sameList(a: string[], b: string[]): boolean {
 }
 
 export function sameValues(a: CacheValues, b: CacheValues): boolean {
-	return a.autoPurge === b.autoPurge && a.skipAllowed === b.skipAllowed && sameList(a.ignoreList, b.ignoreList);
+	return a.autoPurge === b.autoPurge && a.skipAllowed === b.skipAllowed && sameList(a.ignoreList, b.ignoreList) && sameDuration(a.ttl, b.ttl);
 }
 
 /**
@@ -113,13 +132,14 @@ export function toOverride(baseline: CacheValues, desired: CacheValues): Overrid
 		autoPurge: desired.autoPurge === baseline.autoPurge ? null : desired.autoPurge,
 		skipAllowed: desired.skipAllowed === baseline.skipAllowed ? null : desired.skipAllowed,
 		ignoreList: sameList(desired.ignoreList, baseline.ignoreList) ? null : unique(desired.ignoreList),
+		ttl: sameDuration(desired.ttl, baseline.ttl) ? null : desired.ttl.trim(),
 	};
 }
 
 export type ValidationResult = { ok: true; value: OverrideInput } | { ok: false; errors: string[] };
 
 /**
- * Validates the POST /apply body: `{ autoPurge, skipAllowed, ignoreList }`, each optional or null (= config value).
+ * Validates the POST /apply body: `{ autoPurge, skipAllowed, ignoreList, ttl }`, each optional or null (= config value).
  * List entries must be existing collections.
  */
 export function validateInput(body: unknown, collections: Set<string>): ValidationResult {
@@ -127,7 +147,7 @@ export function validateInput(body: unknown, collections: Set<string>): Validati
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, errors: ['Send a JSON object'] };
 	const input = body as Record<string, unknown>;
 
-	const known = ['autoPurge', 'skipAllowed', 'ignoreList'];
+	const known = ['autoPurge', 'skipAllowed', 'ignoreList', 'ttl'];
 	for (const key of Object.keys(input)) if (!known.includes(key)) errors.push(`Unknown setting "${key}"`);
 
 	const bool = (key: 'autoPurge' | 'skipAllowed'): boolean | null => {
@@ -162,5 +182,12 @@ export function validateInput(body: unknown, collections: Set<string>): Validati
 		}
 	}
 
-	return errors.length ? { ok: false, errors } : { ok: true, value: { autoPurge, skipAllowed, ignoreList } };
+	let ttl: string | null = null;
+	if (input.ttl !== undefined && input.ttl !== null) {
+		const value = toTtl(input.ttl);
+		if (value === null || !isValidTtl(value)) errors.push(TTL_ERROR);
+		else ttl = value;
+	}
+
+	return errors.length ? { ok: false, errors } : { ok: true, value: { autoPurge, skipAllowed, ignoreList, ttl } };
 }

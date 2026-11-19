@@ -91,5 +91,5 @@ export function applyEffective(env: Env, stored: StoredOverride | null): CacheVa
 }
 
 export function describe(values: CacheValues): string {
-	return `CACHE_AUTO_PURGE=${values.autoPurge} CACHE_SKIP_ALLOWED=${values.skipAllowed} CACHE_AUTO_PURGE_IGNORE_LIST=[${values.ignoreList.join(', ')}]`;
+	return `CACHE_AUTO_PURGE=${values.autoPurge} CACHE_SKIP_ALLOWED=${values.skipAllowed} CACHE_AUTO_PURGE_IGNORE_LIST=[${values.ignoreList.join(', ')}] CACHE_TTL=${values.ttl}`;
 }

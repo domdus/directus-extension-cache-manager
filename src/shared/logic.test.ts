@@ -121,10 +121,10 @@ const collections = new Set(['view_counter', 'analytics_events', 'directus_activ
 test('validateInput accepts booleans, null and existing collections', () => {
 	assert.deepEqual(validateInput({ autoPurge: true, skipAllowed: null, ignoreList: [' view_counter ', 'view_counter', 'analytics_events'] }, collections), {
 		ok: true,
-		value: { autoPurge: true, skipAllowed: null, ignoreList: ['view_counter', 'analytics_events'] },
+		value: { autoPurge: true, skipAllowed: null, ignoreList: ['view_counter', 'analytics_events'], ttl: null },
 	});
-	assert.deepEqual(validateInput({}, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null } });
-	assert.deepEqual(validateInput({ ignoreList: [] }, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: [] } });
+	assert.deepEqual(validateInput({}, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: null } });
+	assert.deepEqual(validateInput({ ignoreList: [] }, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: [], ttl: null } });
 });
 
 test('validateInput rejects bad types, unknown collections and unknown keys', () => {
@@ -138,17 +138,17 @@ test('validateInput rejects bad types, unknown collections and unknown keys', ()
 	assert.match(fail({ ignoreList: 'view_counter' }).join(), /must be an array/);
 	assert.match(fail({ ignoreList: ['nope', 'view_counter', 'gone'] }).join(), /Unknown collections: nope, gone/);
 	assert.match(fail({ ignoreList: [42] }).join(), /non-empty strings/);
-	assert.match(fail({ ttl: 5 }).join(), /Unknown setting "ttl"/);
+	assert.match(fail({ cacheStore: 'redis' }).join(), /Unknown setting "cacheStore"/);
 	assert.match(fail(null).join(), /JSON object/);
 	assert.match(fail([1]).join(), /JSON object/);
 });
 
-const baseline: CacheValues = { autoPurge: true, skipAllowed: false, ignoreList: ['directus_activity'] };
+const baseline: CacheValues = { autoPurge: true, skipAllowed: false, ignoreList: ['directus_activity'], ttl: '5m' };
 
 test('mergeValues: override wins per setting, null keeps the config value', () => {
 	assert.deepEqual(mergeValues(baseline, null), baseline);
-	assert.deepEqual(mergeValues(baseline, { autoPurge: null, skipAllowed: true, ignoreList: null }), { ...baseline, skipAllowed: true });
-	assert.deepEqual(mergeValues(baseline, { autoPurge: false, skipAllowed: null, ignoreList: [] }), { autoPurge: false, skipAllowed: false, ignoreList: [] });
+	assert.deepEqual(mergeValues(baseline, { autoPurge: null, skipAllowed: true, ignoreList: null, ttl: null }), { ...baseline, skipAllowed: true });
+	assert.deepEqual(mergeValues(baseline, { autoPurge: false, skipAllowed: null, ignoreList: [], ttl: '1h' }), { autoPurge: false, skipAllowed: false, ignoreList: [], ttl: '1h' });
 	// The result never shares the baseline array.
 	const merged = mergeValues(baseline, null);
 	merged.ignoreList.push('x');
@@ -156,32 +156,37 @@ test('mergeValues: override wins per setting, null keeps the config value', () =
 });
 
 test('toOverride stores only what differs from config', () => {
-	assert.deepEqual(toOverride(baseline, { ...baseline, ignoreList: ['directus_activity'] }), { autoPurge: null, skipAllowed: null, ignoreList: null });
-	assert.deepEqual(toOverride(baseline, { autoPurge: true, skipAllowed: true, ignoreList: ['view_counter', 'directus_activity'] }), {
+	assert.deepEqual(toOverride(baseline, { ...baseline, ignoreList: ['directus_activity'], ttl: '300000' }), { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: null });
+	assert.deepEqual(toOverride(baseline, { autoPurge: true, skipAllowed: true, ignoreList: ['view_counter', 'directus_activity'], ttl: ' 1h ' }), {
 		autoPurge: null,
 		skipAllowed: true,
 		ignoreList: ['view_counter', 'directus_activity'],
+		ttl: '1h',
 	});
 });
 
 test('parseStored reads objects and JSON strings, rejects garbage and empty overrides', () => {
-	const stored = { autoPurge: false, skipAllowed: null, ignoreList: ['a', 'a', 'b'], updatedAt: '2026-11-19T10:00:00Z', updatedBy: 'u1' };
+	const stored = { autoPurge: false, skipAllowed: null, ignoreList: ['a', 'a', 'b'], ttl: '1h', updatedAt: '2026-11-19T10:00:00Z', updatedBy: 'u1' };
 	assert.deepEqual(parseStored(stored), { ...stored, ignoreList: ['a', 'b'] });
 	assert.deepEqual(parseStored(JSON.stringify(stored)), { ...stored, ignoreList: ['a', 'b'] });
 	assert.equal(parseStored(null), null);
 	assert.equal(parseStored('{broken'), null);
 	assert.equal(parseStored([1, 2]), null);
 	assert.equal(parseStored({ autoPurge: 'yes', ignoreList: 'a' }), null);
+	assert.equal(parseStored({ ttl: 'forever' }), null);
+	assert.deepEqual(parseStored({ ttl: 600000 })?.ttl, '600000');
 });
 
 test('readValues / applyToEnv round trip on an env object', () => {
-	const env: Record<string, unknown> = { CACHE_AUTO_PURGE: true, CACHE_SKIP_ALLOWED: 'false', CACHE_AUTO_PURGE_IGNORE_LIST: 'a, b,,a' };
-	assert.deepEqual(readValues(env), { autoPurge: true, skipAllowed: false, ignoreList: ['a', 'b'] });
-	applyToEnv(env, { autoPurge: false, skipAllowed: true, ignoreList: ['c'] });
+	const env: Record<string, unknown> = { CACHE_AUTO_PURGE: true, CACHE_SKIP_ALLOWED: 'false', CACHE_AUTO_PURGE_IGNORE_LIST: 'a, b,,a', CACHE_TTL: '30m' };
+	assert.deepEqual(readValues(env), { autoPurge: true, skipAllowed: false, ignoreList: ['a', 'b'], ttl: '30m' });
+	applyToEnv(env, { autoPurge: false, skipAllowed: true, ignoreList: ['c'], ttl: '1h' });
+	assert.equal(env.CACHE_TTL, '1h');
 	assert.equal(env.CACHE_AUTO_PURGE, false);
 	assert.equal(env.CACHE_SKIP_ALLOWED, true);
 	assert.deepEqual(env.CACHE_AUTO_PURGE_IGNORE_LIST, ['c']);
-	assert.deepEqual(readValues({}), { autoPurge: false, skipAllowed: false, ignoreList: [] });
+	assert.deepEqual(readValues({}), { autoPurge: false, skipAllowed: false, ignoreList: [], ttl: '5m' });
+	assert.equal(readValues({ CACHE_TTL: 300000 }).ttl, '300000');
 });
 
 test('format helpers produce plain tile texts', async () => {
@@ -224,4 +229,42 @@ test('per-hour rate rounds to whole minutes and says "less than 1" below one', a
 	assert.equal(formatMinutesShort(288, 1440), '288 min · ~12/h');
 	assert.equal(formatMinutesShort(3, 1440), '3 min · <1/h');
 	assert.equal(formatMinutesShort(1288, 10080), '1,288 min · ~8/h');
+});
+
+test('parseDuration follows the ms rules Directus uses for CACHE_TTL', async () => {
+	const { parseDuration, isValidTtl, sameDuration, MAX_TTL_MS } = await import('./duration');
+	assert.equal(parseDuration('5m'), 300_000);
+	assert.equal(parseDuration('1h'), 3_600_000);
+	assert.equal(parseDuration('12 hours'), 43_200_000);
+	assert.equal(parseDuration('1.5h'), 5_400_000);
+	assert.equal(parseDuration('1d'), 86_400_000);
+	assert.equal(parseDuration('300000'), 300_000);
+	assert.equal(parseDuration(300000), 300_000);
+	assert.equal(parseDuration('90s'), 90_000);
+	assert.equal(parseDuration('2H'), 7_200_000);
+	assert.equal(parseDuration(''), null);
+	assert.equal(parseDuration('1 hour 5 minutes'), null);
+	assert.equal(parseDuration('forever'), null);
+	assert.equal(parseDuration(null), null);
+	assert.equal(isValidTtl('1h'), true);
+	assert.equal(isValidTtl('30d'), true);
+	assert.equal(isValidTtl(MAX_TTL_MS + 1), false);
+	assert.equal(isValidTtl('31d'), false);
+	assert.equal(isValidTtl('0'), false);
+	assert.equal(isValidTtl('-5m'), false);
+	assert.equal(sameDuration('1h', '60m'), true);
+	assert.equal(sameDuration('1h', '3600000'), true);
+	assert.equal(sameDuration('1h', '2h'), false);
+});
+
+test('validateInput checks ttl', () => {
+	const ok = validateInput({ ttl: ' 12h ' }, new Set());
+	assert.deepEqual(ok, { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: '12h' } });
+	assert.deepEqual(validateInput({ ttl: 600000 }, new Set()), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: '600000' } });
+	assert.deepEqual(validateInput({ ttl: null }, new Set()), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: null } });
+	for (const ttl of ['soon', '0', '-1h', '40d', '', true, [1]]) {
+		const result = validateInput({ ttl }, new Set());
+		assert.equal(result.ok, false, String(ttl));
+		assert.match(result.ok ? '' : result.errors.join(), /Use a duration like 5m, 1h or 12h/);
+	}
 });

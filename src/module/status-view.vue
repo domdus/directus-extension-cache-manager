@@ -12,7 +12,7 @@
 			<v-button v-tooltip.bottom="'Reset to configured values'" rounded icon small secondary :disabled="!state?.stored || busy" @click="reset">
 				<v-icon name="settings_backup_restore" small />
 			</v-button>
-			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!dirty || busy" @click="save">
+			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!canSave || busy" @click="save">
 				<v-icon name="check" small />
 			</v-button>
 		</template>
@@ -48,6 +48,20 @@
 				</p>
 				<p class="sidebar-text">Apps need this to read selected collections up to date.</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on, if your Directus is not open to the public.</p>
+			</sidebar-detail>
+			<sidebar-detail id="ttl" icon="schedule" title="How long answers stay in the cache">
+				<p class="sidebar-text">
+					Write a duration like 5m (minutes), 1h (hours) or 1d (days). At most 30 days.
+				</p>
+				<p class="sidebar-text">
+					Shorter means fresher data, but Directus asks the database more often. Longer means less work for the
+					database, but data that is not cleared can be older.
+				</p>
+				<p class="sidebar-text">
+					A new value applies to new entries right away. Entries already in the cache keep their old lifetime until they
+					expire or the cache is cleared.
+				</p>
+				<p class="sidebar-text"><strong>Recommended:</strong> between 5 minutes and a few hours.</p>
 			</sidebar-detail>
 		</template>
 
@@ -93,9 +107,24 @@
 						:configured="state.baseline.ignoreList"
 						:override="state.stored?.ignoreList ?? null"
 					>
-						<v-button small secondary to="/cache-manager/analysis">Choose in Analysis</v-button>
+						<v-button small secondary to="/cache-manager/collections">Choose collections</v-button>
 					</setting-card>
-					<setting-card title="How long answers stay in the cache" env="CACHE_TTL" :effective="String(state.env.CACHE_TTL ?? '–')" readonly />
+					<setting-card
+						title="How long answers stay in the cache"
+						env="CACHE_TTL"
+						:effective="state.effective.ttl"
+						:configured="state.baseline.ttl"
+						:override="state.stored?.ttl ?? null"
+					>
+						<template #edit>
+							<v-input v-model="draft.ttl" placeholder="e.g. 1h" :class="{ invalid: !ttlValid }" />
+							<span v-if="!ttlValid" class="field-error">{{ TTL_ERROR }}</span>
+							<span class="field-hint">
+								Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire
+								or the cache is cleared.
+							</span>
+						</template>
+					</setting-card>
 					<setting-card title="Where the cache is kept" env="CACHE_STORE" :effective="String(state.env.CACHE_STORE ?? '–')" readonly />
 				</div>
 				<p class="meta">
@@ -119,10 +148,10 @@
 				</div>
 				<v-notice type="info" class="ttl-notice">
 					<div>
-						Selected collections can be served from the cache for up to <strong>{{ state.env.CACHE_TTL ?? '–' }}</strong>
+						Selected collections can be served from the cache for up to <strong>{{ state.effective.ttl }}</strong>
 						after a change. Apps can ask for fresh data with the header <code>Cache-Control: no-store</code> when "Allow
 						apps to skip the cache" is on.
-						<span class="env-name block">CACHE_TTL, from the configuration Directus is running with</span>
+						<span class="env-name block">CACHE_TTL, the value in use now</span>
 					</div>
 				</v-notice>
 			</template>
@@ -135,11 +164,12 @@ import { onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import PendingChanges from './pending-changes.vue';
 import SettingCard from './setting-card.vue';
+import { TTL_ERROR } from '../shared/duration';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
 const pageClass = usePageClass();
-const { state, draft, busy, dirty, saving, loadingState, error, message, loadState, save, reset } = useCacheManager();
+const { state, draft, busy, dirty, canSave, ttlValid, saving, loadingState, error, message, loadState, save, reset } = useCacheManager();
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
 
 function onOff(value: boolean) {
@@ -218,6 +248,18 @@ onMounted(() => loadState(true));
 }
 .check-label .env-name {
 	margin-left: 8px;
+}
+.field-error {
+	font-size: 12px;
+	color: var(--theme--danger);
+}
+.field-hint {
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--theme--foreground-subdued);
+}
+.invalid {
+	--theme--form--field--input--border-color: var(--theme--danger);
 }
 code {
 	font-family: var(--theme--fonts--monospace--font-family, monospace);
