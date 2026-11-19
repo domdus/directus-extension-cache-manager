@@ -1,6 +1,6 @@
 {
 	"name": "directus-extension-cache-manager",
-	"description": "Keep your Directus cache alive longer: find the collections that keep clearing it, stop them, and tune cache settings live without a restart",
+	"description": "Find the collections that clear the Directus cache, exclude them so cached answers last longer, and change auto-purge, cache bypass, and cache lifetime at runtime without a restart",
 	"icon": "cached",
 	"version": "0.1.0",
 	"license": "MIT",
@@ -13,6 +13,9 @@
 		"cache-purge",
 		"auto-purge",
 		"ignore-list",
+		"cache-ttl",
+		"ttl",
+		"purge",
 		"performance",
 		"module"
 	],
@@ -39,7 +42,7 @@
 		"entries": [
 			{
 				"type": "module",
-				"name": "cache-manager",
+				"name": "cache-manager-module",
 				"source": "src/module/index.ts"
 			},
 			{
