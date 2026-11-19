@@ -123,6 +123,37 @@ export function useCacheManager() {
 		}
 	}
 
+	/** Saves imported values like Save & apply. Throws a plain message on failure. */
+	async function importSettings(body: Record<string, unknown>) {
+		saving.value = true;
+		try {
+			const { data } = await api.post(`${base}/apply`, body);
+			state.value = data;
+			resetDraft();
+			if (analysis.value) await loadAnalysis();
+		} catch (err) {
+			throw new Error(errorText(err));
+		} finally {
+			saving.value = false;
+		}
+	}
+
+	/** Uses the configured values again and deletes the settings field. */
+	async function cleanup(): Promise<{ deletedField: boolean }> {
+		saving.value = true;
+		try {
+			const { data } = await api.post(`${base}/cleanup`);
+			state.value = data.state;
+			resetDraft();
+			if (analysis.value) await loadAnalysis();
+			return { deletedField: Boolean(data.deletedField) };
+		} catch (err) {
+			throw new Error(errorText(err));
+		} finally {
+			saving.value = false;
+		}
+	}
+
 	function toggle(collection: string, on: boolean) {
 		draft.ignoreList = on ? [...new Set([...draft.ignoreList, collection])] : draft.ignoreList.filter((name) => name !== collection);
 	}
@@ -155,5 +186,7 @@ export function useCacheManager() {
 		discard: resetDraft,
 		toggle,
 		add,
+		importSettings,
+		cleanup,
 	};
 }

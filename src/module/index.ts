@@ -2,6 +2,7 @@ import { defineModule } from '@directus/extensions-sdk';
 import { EXTENSION_ID } from '../shared/constants';
 import { userHasAdminAccess } from '../shared/admin';
 import CollectionsView from './collections-view.vue';
+import SettingsView from './settings-view.vue';
 import StatusView from './status-view.vue';
 
 export default defineModule({
@@ -16,6 +17,10 @@ export default defineModule({
 		{
 			path: 'collections',
 			component: CollectionsView,
+		},
+		{
+			path: 'settings',
+			component: SettingsView,
 		},
 		{
 			// Earlier name of the Collections page.

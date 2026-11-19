@@ -137,7 +137,7 @@ test('validateInput rejects bad types, unknown collections and unknown keys', ()
 	assert.match(fail({ autoPurge: 'true' }).join(), /autoPurge must be/);
 	assert.match(fail({ skipAllowed: 1 }).join(), /skipAllowed must be/);
 	assert.match(fail({ ignoreList: 'view_counter' }).join(), /must be an array/);
-	assert.match(fail({ ignoreList: ['nope', 'view_counter', 'gone'] }).join(), /Unknown collections: nope, gone/);
+	assert.match(fail({ ignoreList: ['nope', 'view_counter', 'gone'] }).join(), /These collections do not exist in this project: nope, gone/);
 	assert.match(fail({ ignoreList: [42] }).join(), /non-empty strings/);
 	assert.match(fail({ cacheStore: 'redis' }).join(), /Unknown setting "cacheStore"/);
 	assert.match(fail(null).join(), /JSON object/);
@@ -299,4 +299,43 @@ test('formatSavedPerHour for the table', async () => {
 	assert.equal(formatSavedPerHour(284, 1440), '−12/h');
 	assert.equal(formatSavedPerHour(3, 1440), '−<1/h');
 	assert.equal(formatSavedPerHour(0, 1440), '0');
+});
+
+test('buildExport writes only the saved values', async () => {
+	const { buildExport } = await import('./transfer');
+	const file = buildExport(
+		{ autoPurge: null, skipAllowed: true, ignoreList: ['view_counter'], ttl: '1h', updatedAt: '2026-11-19T10:00:00.000Z', updatedBy: 'user-1' },
+		new Date('2026-11-20T08:00:00Z'),
+	);
+	assert.deepEqual(file, {
+		extension: 'directus-extension-cache-manager',
+		format: 1,
+		exportedAt: '2026-11-20T08:00:00.000Z',
+		settings: { autoPurge: null, skipAllowed: true, ignoreList: ['view_counter'], ttl: '1h' },
+		updatedAt: '2026-11-19T10:00:00.000Z',
+	});
+	assert.equal(buildExport(null).settings, null);
+});
+
+test('parseImport reads exported files and bare settings, with plain errors', async () => {
+	const { buildExport, parseImport, ImportError } = await import('./transfer');
+	const exported = JSON.stringify(buildExport({ autoPurge: false, skipAllowed: null, ignoreList: ['a'], ttl: null, updatedAt: null, updatedBy: 'u' }));
+	assert.deepEqual(parseImport(exported), { autoPurge: false, skipAllowed: null, ignoreList: ['a'], ttl: null });
+	assert.deepEqual(parseImport(JSON.stringify(buildExport(null))), {});
+	assert.deepEqual(parseImport('{"ignoreList":["a"],"ttl":"2h","updatedBy":"x"}'), { ignoreList: ['a'], ttl: '2h' });
+	// Unknown keys next to known ones reach /apply, which names them.
+	assert.deepEqual(parseImport('{"ttl":"2h","store":"redis"}'), { ttl: '2h', store: 'redis' });
+
+	const fails = (text: string, pattern: RegExp) => assert.throws(() => parseImport(text), (error: unknown) => error instanceof ImportError && pattern.test((error as Error).message));
+	fails('not json', /not valid JSON/);
+	fails('[1,2]', /does not contain Cache Manager settings/);
+	fails('{"rules":[]}', /does not contain Cache Manager settings/);
+	fails('{"extension":"directus-extension-other","settings":{}}', /another extension/);
+	fails('{"extension":"directus-extension-cache-manager","format":2,"settings":{}}', /newer version/);
+	fails('{"extension":"directus-extension-cache-manager","settings":"x"}', /does not contain/);
+
+	// The imported body goes through the same validation as Save & apply.
+	const result = validateInput(parseImport('{"ignoreList":["missing"]}'), new Set(['a']));
+	assert.equal(result.ok, false);
+	assert.match(result.ok ? '' : result.errors.join(), /This collection does not exist in this project: missing/);
 });

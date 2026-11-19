@@ -2,7 +2,7 @@
 
 Choose which changes clear the Directus cache, right in the Data Studio. No config files, no restart. The Collections page shows how often the cache is cleared, which collections cause it, and suggests what to change.
 
-Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Collections** shows which collections clear the cache and lets you choose the ones that shouldn't.
+Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Collections** shows which collections clear the cache and lets you choose the ones that shouldn't. **Settings** checks for updates, exports and imports what you saved, and removes the extension's data before you uninstall.
 
 ## Why
 
@@ -51,6 +51,12 @@ npm run build
 5. Click **Save & apply** (top right, on either page). It is used right away.
 
 **Reset** on the Status page removes what you saved here and uses the configured values again.
+
+### Settings page
+
+- **Extension Updates**: checks npm for a newer version.
+- **Export / Import**: downloads what you saved as a JSON file, or loads such a file. An import is checked like Save & apply (for example, every collection must exist in this project) and is used right away.
+- **Remove extension data**: uses the configured values again and deletes the `cache_manager` field. Use it before uninstalling.
 
 ## The settings
 
@@ -115,6 +121,7 @@ All routes need an admin.
 | `GET /cache-manager/analysis?hours=24&candidate=a,b` | Numbers for the Collections page; `candidate` adds a what-if value for that list |
 | `POST /cache-manager/apply` | Body `{ "autoPurge": true, "skipAllowed": null, "ignoreList": ["view_counter"], "ttl": "1h" }`. `null` or missing = configured value. List entries must be existing collections |
 | `POST /cache-manager/reset` | Remove the saved values and use the configured values |
+| `POST /cache-manager/cleanup` | Use the configured values and delete the `cache_manager` field |
 
 ### Development
 
@@ -127,7 +134,10 @@ npm run build
 
 ## Uninstall
 
-Click **Reset** on the Status page, remove the extension, then delete the `cache_manager` field from `directus_settings` (**Settings → Data Model → System Collections → Settings**).
+1. Open **Cache Manager → Settings → Remove extension data** first. This uses the configured values again and deletes the `cache_manager` field from `directus_settings`. Export before, if you might need the settings again.
+2. Remove the extension and restart Directus.
+
+If you skip step 1, delete the `cache_manager` field yourself in **Settings → Data Model → System Collections → Settings**. While the extension stays installed, every restart recreates an empty field.
 
 ## License
 

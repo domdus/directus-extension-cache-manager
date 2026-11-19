@@ -6,6 +6,7 @@ import { isEmptyOverride, mergeValues, readValues, sameValues, validateInput, ty
 import {
 	applyEffective,
 	describe,
+	deleteSettingsField,
 	ensureSettingsField,
 	getBaseline,
 	readStored,
@@ -171,6 +172,17 @@ export default defineEndpoint({
 				const effective = applyEffective(env, null);
 				logger.info(`${LOG_PREFIX} reset to config by ${accountability.user}: ${describe(effective)}`);
 				return state();
+			}),
+		);
+
+		router.post(
+			'/cleanup',
+			wrap(async (req) => {
+				const accountability = (req as any).accountability;
+				const effective = applyEffective(env, null);
+				const deletedField = await deleteSettingsField(ctx, accountability);
+				logger.info(`${LOG_PREFIX} extension data removed by ${accountability.user}: ${describe(effective)}`);
+				return { deletedField, state: await state() };
 			}),
 		);
 

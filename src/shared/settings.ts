@@ -187,7 +187,7 @@ export function validateInput(body: unknown, collections: Set<string>): Validati
 				names.push(entry.trim());
 			}
 			const unknown = unique(names.filter((name) => !collections.has(name)));
-			if (unknown.length) errors.push(`Unknown collection${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}`);
+			if (unknown.length) errors.push(`${unknown.length > 1 ? 'These collections do' : 'This collection does'} not exist in this project: ${unknown.join(', ')}`);
 			ignoreList = unique(names);
 		}
 	}

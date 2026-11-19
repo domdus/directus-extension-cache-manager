@@ -93,6 +93,16 @@ export async function writeStored(ctx: ApiContext, accountability: unknown, valu
 }
 
 /** Merges baseline and override and writes the result into env. Returns the effective values. */
+/** Drops the settings field. The hook creates it again (empty) at the next start while the extension is installed. */
+export async function deleteSettingsField(ctx: ApiContext, accountability: unknown): Promise<boolean> {
+	if (!(await hasSettingsField(ctx.database))) return false;
+	const { FieldsService } = ctx.services;
+	const fields = new FieldsService({ knex: ctx.database, schema: await ctx.getSchema(), accountability });
+	await fields.deleteField('directus_settings', SETTINGS_FIELD);
+	ctx.logger.info(`${LOG_PREFIX} deleted field directus_settings.${SETTINGS_FIELD}`);
+	return true;
+}
+
 export function applyEffective(env: Env, stored: StoredOverride | null): CacheValues {
 	const effective = mergeValues(getBaseline(env), stored);
 	applyToEnv(env, effective);
