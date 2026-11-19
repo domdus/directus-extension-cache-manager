@@ -9,42 +9,45 @@
 		</template>
 
 		<template #actions>
-			<v-button v-tooltip.bottom="'Reset to configured values'" rounded icon secondary :disabled="!state?.stored || busy" @click="reset">
-				<v-icon name="settings_backup_restore" />
+			<v-button v-tooltip.bottom="'Reset to configured values'" rounded icon small secondary :disabled="!state?.stored || busy" @click="reset">
+				<v-icon name="settings_backup_restore" small />
 			</v-button>
-			<v-button v-tooltip.bottom="'Save & apply'" rounded icon :loading="saving" :disabled="!dirty || busy" @click="save">
-				<v-icon name="check" />
+			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!dirty || busy" @click="save">
+				<v-icon name="check" small />
 			</v-button>
 		</template>
 
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="About" :close="false">
 				<p class="sidebar-text">
-					<strong>Configured</strong> are the values Directus started with, from its configuration (.env, config file
-					or environment variables).
+					Directus keeps a copy of its answers, the cache, so it does not have to ask the database every time.
 				</p>
 				<p class="sidebar-text">
-					What you save here replaces them right away, without a restart, and stays after a restart until you reset it.
+					<strong>Configured</strong> shows the values Directus started with. They come from its configuration: an .env
+					file, a config file or environment variables.
 				</p>
-				<p class="sidebar-text">If Directus runs more than once (several servers), restart the others after saving.</p>
+				<p class="sidebar-text">
+					What you save here is used right away, without a restart. It stays after a restart until you reset it.
+				</p>
+				<p class="sidebar-text">If Directus runs on several servers, restart the other servers after saving.</p>
 			</sidebar-detail>
-			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Empty the cache when content changes">
+			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Clear the cache when content changes">
 				<p class="sidebar-text">
-					<strong>On:</strong> any change to a collection that is not selected empties the whole cache, so everyone sees
-					the change right away.
+					<strong>On:</strong> a change to a collection that is not selected clears the whole cache. Everyone sees the
+					change right away.
 				</p>
 				<p class="sidebar-text">
-					<strong>Off:</strong> changes only show up when cached answers expire (CACHE_TTL). Editors may wait that long
-					to see their changes.
+					<strong>Off:</strong> changes only show up when the cached copy expires (see "How long answers stay in the
+					cache"). Editors may wait that long to see their changes.
 				</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on.</p>
 			</sidebar-detail>
 			<sidebar-detail id="skip-allowed" icon="bolt" title="Allow apps to skip the cache">
 				<p class="sidebar-text">
-					<strong>On:</strong> an app can ask for fresh data by sending the header <code>Cache-Control: no-store</code>.
-					Apps need this to read selected collections up to date.
+					<strong>On:</strong> an app can ask for fresh data. It sends the header <code>Cache-Control: no-store</code>.
 				</p>
-				<p class="sidebar-text"><strong>Recommended:</strong> on, for a Directus that is not open to the public.</p>
+				<p class="sidebar-text">Apps need this to read selected collections up to date.</p>
+				<p class="sidebar-text"><strong>Recommended:</strong> on, if your Directus is not open to the public.</p>
 			</sidebar-detail>
 		</template>
 
@@ -56,89 +59,72 @@
 
 			<template v-if="state">
 				<v-notice v-if="!state.env.CACHE_ENABLED" type="warning" class="notice">
-					CACHE_ENABLED is off. These settings only matter when the response cache is enabled.
+					The cache is turned off in the configuration, so these settings have no effect right now.
 				</v-notice>
 				<v-notice v-if="!state.inSync" type="warning" class="notice">
-					The running values differ from the configured values plus the saved override. Save again or restart Directus.
+					The settings in use differ from what is configured and saved here. Save again or restart Directus.
 				</v-notice>
 				<pending-changes />
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="tune" /></template>
-					Current values
+					Current settings
 				</v-divider>
 
-				<table class="values">
-					<thead>
-						<tr>
-							<th>Setting</th>
-							<th>Configured</th>
-							<th>Override</th>
-							<th>In effect</th>
-						</tr>
-					</thead>
-					<tbody>
-						<tr>
-							<td>Empty the cache when content changes <span class="env-name">CACHE_AUTO_PURGE</span></td>
-							<td>{{ onOff(state.baseline.autoPurge) }}</td>
-							<td>{{ state.stored?.autoPurge == null ? '–' : onOff(state.stored.autoPurge) }}</td>
-							<td><strong>{{ onOff(state.effective.autoPurge) }}</strong></td>
-						</tr>
-						<tr>
-							<td>Allow apps to skip the cache <span class="env-name">CACHE_SKIP_ALLOWED</span></td>
-							<td>{{ onOff(state.baseline.skipAllowed) }}</td>
-							<td>{{ state.stored?.skipAllowed == null ? '–' : onOff(state.stored.skipAllowed) }}</td>
-							<td><strong>{{ onOff(state.effective.skipAllowed) }}</strong></td>
-						</tr>
-						<tr>
-							<td>Collections whose changes don't empty the cache <span class="env-name">CACHE_AUTO_PURGE_IGNORE_LIST</span></td>
-							<td>{{ listText(state.baseline.ignoreList) }}</td>
-							<td>{{ state.stored?.ignoreList == null ? '–' : listText(state.stored.ignoreList) }}</td>
-							<td><strong>{{ listText(state.effective.ignoreList) }}</strong></td>
-						</tr>
-						<tr class="readonly">
-							<td>How long answers stay in the cache <span class="env-name">CACHE_TTL</span></td>
-							<td colspan="3">{{ state.env.CACHE_TTL ?? '–' }} <span class="subdued">(read only)</span></td>
-						</tr>
-						<tr class="readonly">
-							<td>Where the cache is kept <span class="env-name">CACHE_STORE</span></td>
-							<td colspan="3">{{ state.env.CACHE_STORE ?? '–' }} <span class="subdued">(read only)</span></td>
-						</tr>
-					</tbody>
-				</table>
+				<div class="cards">
+					<setting-card
+						title="Clear the cache when content changes"
+						env="CACHE_AUTO_PURGE"
+						:effective="onOff(state.effective.autoPurge)"
+						:configured="onOff(state.baseline.autoPurge)"
+						:override="state.stored?.autoPurge == null ? null : onOff(state.stored.autoPurge)"
+					/>
+					<setting-card
+						title="Allow apps to skip the cache"
+						env="CACHE_SKIP_ALLOWED"
+						:effective="onOff(state.effective.skipAllowed)"
+						:configured="onOff(state.baseline.skipAllowed)"
+						:override="state.stored?.skipAllowed == null ? null : onOff(state.stored.skipAllowed)"
+					/>
+					<setting-card
+						title="Collections whose changes don't clear the cache"
+						env="CACHE_AUTO_PURGE_IGNORE_LIST"
+						:effective="state.effective.ignoreList"
+						:configured="state.baseline.ignoreList"
+						:override="state.stored?.ignoreList ?? null"
+					>
+						<v-button small secondary to="/cache-manager/analysis">Choose in Analysis</v-button>
+					</setting-card>
+					<setting-card title="How long answers stay in the cache" env="CACHE_TTL" :effective="String(state.env.CACHE_TTL ?? '–')" readonly />
+					<setting-card title="Where the cache is kept" env="CACHE_STORE" :effective="String(state.env.CACHE_STORE ?? '–')" readonly />
+				</div>
 				<p class="meta">
 					<template v-if="state.configPath">Config file: <code>{{ state.configPath }}</code>. </template>
-					<template v-if="state.stored?.updatedAt">Override saved {{ new Date(state.stored.updatedAt).toLocaleString() }}.</template>
-					<template v-else>No override saved.</template>
+					<template v-if="state.stored?.updatedAt">Saved here on {{ new Date(state.stored.updatedAt).toLocaleString() }}.</template>
+					<template v-else>Nothing saved here. The configured values are in use.</template>
 				</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="cached" /></template>
-					When the cache is emptied
+					When the cache is cleared
 				</v-divider>
 
 				<div class="toggles">
-					<div>
-						<v-checkbox v-model="draft.autoPurge" block label="Empty the cache when content changes" />
-						<span class="env-name">CACHE_AUTO_PURGE</span>
-					</div>
-					<div>
-						<v-checkbox v-model="draft.skipAllowed" block label="Allow apps to skip the cache" />
-						<span class="env-name">CACHE_SKIP_ALLOWED</span>
-					</div>
+					<v-checkbox v-model="draft.autoPurge" block>
+						<span class="check-label">Clear the cache when content changes <span class="env-name">CACHE_AUTO_PURGE</span></span>
+					</v-checkbox>
+					<v-checkbox v-model="draft.skipAllowed" block>
+						<span class="check-label">Allow apps to skip the cache <span class="env-name">CACHE_SKIP_ALLOWED</span></span>
+					</v-checkbox>
 				</div>
-				<p class="ttl-note">
-					<v-icon name="schedule" small />
-					<span>
+				<v-notice type="info" class="ttl-notice">
+					<div>
 						Selected collections can be served from the cache for up to <strong>{{ state.env.CACHE_TTL ?? '–' }}</strong>
-						after a change (CACHE_TTL, read from the running configuration). Apps can ask for fresh data with the header
-						<code>Cache-Control: no-store</code> when "Allow apps to skip the cache" is on.
-					</span>
-				</p>
-				<p class="meta">
-					Collections whose changes don't empty the cache: {{ listText(draft.ignoreList) }}.
-					<router-link to="/cache-manager/analysis">Choose them in Analysis</router-link>
-				</p>
+						after a change. Apps can ask for fresh data with the header <code>Cache-Control: no-store</code> when "Allow
+						apps to skip the cache" is on.
+						<span class="env-name block">CACHE_TTL, from the configuration Directus is running with</span>
+					</div>
+				</v-notice>
 			</template>
 		</div>
 	</private-view>
@@ -148,6 +134,7 @@
 import { onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import PendingChanges from './pending-changes.vue';
+import SettingCard from './setting-card.vue';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
@@ -156,10 +143,7 @@ const { state, draft, busy, dirty, saving, loadingState, error, message, loadSta
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
 
 function onOff(value: boolean) {
-	return value ? 'on' : 'off';
-}
-function listText(list: string[]) {
-	return list.length ? list.join(', ') : '(empty)';
+	return value ? 'On' : 'Off';
 }
 
 onMounted(() => loadState(true));
@@ -193,20 +177,6 @@ onMounted(() => loadState(true));
 	line-height: 1.55;
 	color: var(--theme--foreground);
 }
-table {
-	width: 100%;
-	border-collapse: collapse;
-}
-th,
-td {
-	text-align: left;
-	padding: 8px 10px;
-	border-bottom: var(--theme--border-width, 1px) solid var(--theme--border-color-subdued);
-}
-th {
-	color: var(--theme--foreground-subdued);
-	font-weight: 600;
-}
 .subdued,
 .meta {
 	color: var(--theme--foreground-subdued);
@@ -223,26 +193,31 @@ th {
 	gap: 12px;
 	max-inline-size: 36rem;
 }
-td .env-name {
-	display: block;
-}
 .env-name {
 	color: var(--theme--foreground-subdued);
 	font-family: var(--theme--fonts--monospace--font-family, monospace);
 	font-size: 12px;
 }
-.toggles .env-name {
-	margin: 4px 0 0 2px;
-	display: block;
-}
-.ttl-note {
-	display: flex;
-	gap: 8px;
-	align-items: flex-start;
+.ttl-notice {
 	margin-top: 16px;
 	max-inline-size: 42rem;
-	line-height: 1.55;
-	color: var(--theme--foreground-subdued);
+}
+.cards {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+}
+@media (max-width: 900px) {
+	.cards {
+		grid-template-columns: 1fr;
+	}
+}
+.env-name.block {
+	display: block;
+	margin-top: 4px;
+}
+.check-label .env-name {
+	margin-left: 8px;
 }
 code {
 	font-family: var(--theme--fonts--monospace--font-family, monospace);

@@ -9,42 +9,43 @@
 		</template>
 
 		<template #actions>
-			<v-button v-tooltip.bottom="'Refresh'" rounded icon secondary :loading="loadingAnalysis" :disabled="saving" @click="loadAnalysis">
-				<v-icon name="refresh" />
+			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loadingAnalysis" :disabled="saving" @click="loadAnalysis">
+				<v-icon name="refresh" small />
 			</v-button>
-			<v-button v-tooltip.bottom="'Save & apply'" rounded icon :loading="saving" :disabled="!dirty || busy" @click="save">
-				<v-icon name="check" />
+			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!dirty || busy" @click="save">
+				<v-icon name="check" small />
 			</v-button>
 		</template>
 
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="How it counts" :close="false">
 				<p class="sidebar-text">
-					Directus keeps answers in a cache so it does not have to read the database every time. A change to a collection
-					that is not selected here empties the whole cache.
+					Directus keeps a copy of its answers, the cache, so it does not have to ask the database every time.
 				</p>
 				<p class="sidebar-text">
-					This page counts, minute by minute, in how many minutes that happened. The numbers come from the activity log.
+					A change to a collection that is not selected clears the whole cache. This page counts in how many minutes that
+					happened at least once. Several changes in the same minute count as one.
 				</p>
 				<p class="sidebar-text">
-					Some changes are not in the activity log (for example from some Flows), so the real numbers can be higher.
+					The numbers come from the activity log. Some automatic changes, for example from some Flows, are not in the
+					activity log. The real numbers can be higher.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="strategy" icon="lightbulb" title="What to select">
 				<p class="sidebar-text">
-					Good candidates change very often and nobody needs them up to date to the second: counters, logs, statistics.
+					Good choices change very often, and nobody needs them up to date to the second: counters, logs, statistics.
 				</p>
 				<p class="sidebar-text">
-					Do not select collections that decide what users may see or buy (subscriptions, purchases, access rights),
-					unless the apps reading them ask for fresh data.
+					Don't select collections that decide what users may see or buy, like subscriptions, purchases or access rights.
+					Only select them if the apps that read them ask for fresh data.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="recommendations" icon="recommend" title="How suggestions are made">
 				<p class="sidebar-text">A collection is suggested when it</p>
 				<ul class="sidebar-list">
-					<li>changes at least {{ formatPercent(RECOMMEND_MIN_SHARE) }} of the time,</li>
+					<li>changes in at least {{ formatPercent(RECOMMEND_MIN_SHARE) }} of all minutes,</li>
 					<li>is not a Directus system collection,</li>
-					<li>is not mostly edited by people in the Data Studio.</li>
+					<li>is not mostly changed by editors in the Data Studio.</li>
 				</ul>
 			</sidebar-detail>
 		</template>
@@ -63,47 +64,63 @@
 			<template v-if="analysis">
 				<div class="tiles">
 					<div class="tile">
-						<span class="label">Cache emptied</span>
-						<span class="value">{{ formatShare(nowShare) }} of the time</span>
-						<span class="explain">in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
+						<span class="label">How often the cache is cleared</span>
+						<div class="figure">
+							<span class="value">{{ formatShare(nowShare) }}</span>
+							<span class="unit">of all minutes</span>
+						</div>
 						<span class="explain">
-							While the cache is empty, Directus has to build every answer from the database again, which is slower.
+							The cache was cleared in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}
+							({{ formatRate(analysis.purgeMinutes, analysis.windowMinutes) }}). Lower is better:
+							after clearing, Directus has to load everything from the database again.
 						</span>
 					</div>
 
 					<div class="tile" :class="{ changed: dirty }">
 						<span class="label">With your selection</span>
-						<span v-if="dirty" class="text">
-							The cache would be emptied <strong>{{ formatShare(share(whatIf)) }}</strong> of the time instead of
-							{{ formatShare(nowShare) }}.
-						</span>
-						<span v-else class="explain">No changes selected. Tick collections below to see the effect.</span>
+						<template v-if="dirty">
+							<div class="figure">
+								<span class="value">{{ formatShare(share(whatIf)) }}</span>
+								<span class="unit">instead of {{ formatShare(nowShare) }}</span>
+							</div>
+							<span class="explain">
+								The cache would have been cleared in {{ formatMinutes(whatIf, analysis.windowMinutes) }}
+								({{ formatRateCompare(whatIf, analysis.purgeMinutes, analysis.windowMinutes) }}). Lower is better.
+							</span>
+						</template>
+						<span v-else class="explain">No changes selected yet. Tick collections in the table below to see the effect here.</span>
 					</div>
 
 					<div class="tile">
 						<span class="label">Suggestion</span>
 						<template v-if="analysis.recommendedList.length">
+							<div class="figure">
+								<span class="value">{{ formatShare(share(analysis.recommendedPurgeMinutes)) }}</span>
+								<span class="unit">instead of {{ formatShare(nowShare) }}</span>
+							</div>
 							<span class="text">
-								Stop emptying the cache on changes to {{ analysis.recommendedList.length }}
-								{{ analysis.recommendedList.length === 1 ? 'collection' : 'collections' }}
-								({{ analysis.recommendedList.join(', ') }}).
+								Don't clear the cache when {{ analysis.recommendedList.length === 1 ? 'this collection changes' : 'these collections change' }}:
+								{{ analysis.recommendedList.join(', ') }}.
 							</span>
-							<span class="text">
-								Then the cache would be emptied only <strong>{{ formatShare(share(analysis.recommendedPurgeMinutes)) }}</strong>
-								of the time instead of {{ formatShare(nowShare) }}.
+							<span class="explain">
+								The cache would have been cleared in
+								{{ formatMinutes(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}
+								({{ formatRateCompare(analysis.recommendedPurgeMinutes, analysis.purgeMinutes, analysis.windowMinutes) }}).
+								Lower is better.
 							</span>
 							<div>
 								<v-button small :secondary="!addableRecommendations.length" :disabled="!addableRecommendations.length" @click="add(addableRecommendations)">
 									{{ addableRecommendations.length ? 'Select suggestion' : 'Suggestion selected' }}
 								</v-button>
 							</div>
-							<span class="explain">Only do this if no app needs these entries to be up to date immediately.</span>
+							<span class="explain">Only do this if no app needs these entries to be up to date right away.</span>
 						</template>
-						<span v-else class="explain">No suggestion – nothing changes often enough to matter.</span>
+						<span v-else class="explain">No suggestion. No collection changes often enough to matter.</span>
 					</div>
 				</div>
 
 				<div class="toolbar">
+					<span class="subdued">All numbers: {{ formatPeriod(analysis.hours) }}.</span>
 					<div class="add-other">
 						<select v-model="otherCollection" class="native-select" aria-label="Another collection">
 							<option value="">Select another collection…</option>
@@ -116,10 +133,10 @@
 				<table class="analysis">
 					<thead>
 						<tr>
-							<th>Don't empty cache on changes</th>
+							<th>Don't clear the cache on changes</th>
 							<th>Collection</th>
 							<th class="num">Changes</th>
-							<th class="num">Changed during</th>
+							<th class="num">Changed in</th>
 							<th class="num">Effect if selected</th>
 							<th>Status</th>
 							<th>Suggestion</th>
@@ -130,7 +147,7 @@
 							<td><v-checkbox :model-value="draftSet.has(row.collection)" @update:model-value="toggle(row.collection, $event)" /></td>
 							<td><code>{{ row.collection }}</code></td>
 							<td class="num">{{ formatNumber(row.writes) }}</td>
-							<td class="num">{{ formatShare(row.share) }} of the time</td>
+							<td class="num">{{ formatMinutesShort(row.minutes, analysis.windowMinutes) }}</td>
 							<td class="num">{{ row.ignored ? '–' : formatSaved(share(row.savedMinutes)) }}</td>
 							<td>{{ row.ignored ? 'Already selected' : '–' }}</td>
 							<td>
@@ -142,11 +159,12 @@
 				</table>
 
 				<p class="meta">
-					Last {{ formatWindow(analysis.hours) }}, {{ new Date(analysis.from).toLocaleString() }} to
-					{{ new Date(analysis.to).toLocaleString() }}. "Effect if selected" is how much less often the cache would be
-					emptied if you also select that collection.
+					{{ new Date(analysis.from).toLocaleString() }} to {{ new Date(analysis.to).toLocaleString() }}.
+					"Changed in" counts the minutes with at least one change, and how many that is per hour. "Effect if selected" shows how much less often the
+					cache would be cleared if you also select that collection. A bigger drop is better.
 					<template v-if="!analysis.editorHeuristic">
-						PUBLIC_URL is not a full URL, so edits in the Data Studio cannot be told apart from other changes.
+						The public address of Directus is not a full URL, so changes by editors can't be told apart from changes by
+						apps.
 					</template>
 				</p>
 			</template>
@@ -158,7 +176,18 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import type { CollectionStats } from '../shared/analysis';
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
-import { formatMinutes, formatNumber, formatPercent, formatSaved, formatShare, formatWindow } from '../shared/format';
+import {
+	formatMinutes,
+	formatMinutesShort,
+	formatNumber,
+	formatPercent,
+	formatPeriod,
+	formatRate,
+	formatRateCompare,
+	formatSaved,
+	formatShare,
+	formatWindow,
+} from '../shared/format';
 import ModuleNavigation from './navigation.vue';
 import PendingChanges from './pending-changes.vue';
 import { useCacheManager } from './composables/use-cache-manager';
@@ -194,7 +223,7 @@ const rows = computed<CollectionStats[]>(() => {
 			editorWrites: 0,
 			ignored: effective.has(collection),
 			recommended: false,
-			reason: 'No changes in this time window',
+			reason: 'No changes in this time',
 			savedMinutes: 0,
 		}));
 	return [...list, ...empty];
@@ -268,17 +297,24 @@ onMounted(async () => {
 }
 .tiles {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-	gap: 12px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 16px;
 	margin-bottom: 24px;
+}
+@media (max-width: 1100px) {
+	.tiles {
+		grid-template-columns: 1fr;
+	}
 }
 .tile {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	padding: 14px 16px;
-	border: var(--theme--border-width, 1px) solid var(--theme--border-color-subdued);
+	gap: 8px;
+	min-width: 0;
+	padding: 16px 18px;
 	border-radius: var(--theme--border-radius);
+	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
+	background: var(--theme--background);
 }
 .tile.changed {
 	border-color: var(--theme--primary);
@@ -287,11 +323,22 @@ onMounted(async () => {
 	font-style: italic;
 }
 .tile .label {
+	font-size: 15px;
 	font-weight: 600;
+	letter-spacing: 0.01em;
+}
+.tile .figure {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.tile .unit {
+	color: var(--theme--foreground-subdued);
 }
 .tile .value {
-	font-size: 20px;
-	font-weight: 700;
+	font-size: 18px;
+	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
 .tile .text {

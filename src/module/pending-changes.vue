@@ -19,14 +19,14 @@ const changes = computed(() => {
 	if (!effective) return [];
 	const list: string[] = [];
 	const onOff = (value: boolean) => (value ? 'on' : 'off');
-	if (draft.autoPurge !== effective.autoPurge) list.push(`empty the cache when content changes: ${onOff(draft.autoPurge)}`);
+	if (draft.autoPurge !== effective.autoPurge) list.push(`clear the cache when content changes: ${onOff(draft.autoPurge)}`);
 	if (draft.skipAllowed !== effective.skipAllowed) list.push(`allow apps to skip the cache: ${onOff(draft.skipAllowed)}`);
 	const now = new Set(effective.ignoreList);
 	const next = new Set(draft.ignoreList);
 	const added = draft.ignoreList.filter((name) => !now.has(name));
 	const removed = effective.ignoreList.filter((name) => !next.has(name));
-	if (added.length) list.push(`select ${added.join(', ')}`);
-	if (removed.length) list.push(`unselect ${removed.join(', ')}`);
+	if (added.length) list.push(`don't clear the cache for ${added.join(', ')}`);
+	if (removed.length) list.push(`clear the cache again for ${removed.join(', ')}`);
 	return list;
 });
 </script>

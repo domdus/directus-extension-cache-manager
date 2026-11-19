@@ -91,9 +91,9 @@ export function recommendation(
 	const share = windowMinutes ? stats.minutes / windowMinutes : 0;
 	if (stats.ignored) return { recommended: false, reason: 'Already selected' };
 	if (!isRecommendable(stats.collection)) return { recommended: false, reason: 'Directus system collection' };
-	if (share < RECOMMEND_MIN_SHARE) return { recommended: false, reason: `Changes less than ${pct(RECOMMEND_MIN_SHARE)} of the time` };
-	if (stats.writes && stats.editorWrites / stats.writes > EDITOR_SHARE_MAX) return { recommended: false, reason: 'Mostly edited by people in the Data Studio' };
-	return { recommended: true, reason: `Changes ${pct(share)} of the time` };
+	if (share < RECOMMEND_MIN_SHARE) return { recommended: false, reason: `Changes in less than ${pct(RECOMMEND_MIN_SHARE)} of minutes` };
+	if (stats.writes && stats.editorWrites / stats.writes > EDITOR_SHARE_MAX) return { recommended: false, reason: 'Mostly changed by editors in the Data Studio' };
+	return { recommended: true, reason: `Changes in ${pct(share)} of minutes` };
 }
 
 function pct(share: number): string {

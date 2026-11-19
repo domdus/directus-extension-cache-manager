@@ -98,7 +98,7 @@ test('recommendation rules: threshold, system collections, editor collections', 
 	assert.equal(recommendation({ ...base, collection: 'counter' }, WINDOW).recommended, true);
 	assert.equal(recommendation({ ...base, collection: 'counter', minutes: 71 }, WINDOW).recommended, false); // 4.9 %
 	assert.equal(recommendation({ ...base, collection: 'counter', minutes: 72 }, WINDOW).recommended, true); // 5 %
-	assert.equal(recommendation({ ...base, collection: 'articles', editorWrites: 60 }, WINDOW).reason, 'Mostly edited by people in the Data Studio');
+	assert.equal(recommendation({ ...base, collection: 'articles', editorWrites: 60 }, WINDOW).reason, 'Mostly changed by editors in the Data Studio');
 	assert.equal(recommendation({ ...base, collection: 'articles', editorWrites: 50 }, WINDOW).recommended, true);
 	assert.equal(recommendation({ ...base, collection: 'directus_settings' }, WINDOW).recommended, false);
 	assert.equal(recommendation({ ...base, collection: 'directus_presets' }, WINDOW).recommended, true);
@@ -185,9 +185,13 @@ test('readValues / applyToEnv round trip on an env object', () => {
 });
 
 test('format helpers produce plain tile texts', async () => {
-	const { formatMinutes, formatPercent, formatShare, formatWindow, formatSaved } = await import('./format');
-	assert.equal(formatMinutes(306, 1440), '306 of the last 1,440 minutes (24 hours)');
-	assert.equal(formatMinutes(0, 60), '0 of the last 60 minutes (1 hour)');
+	const { formatMinutes, formatMinuteCount, formatPeriod, formatPercent, formatShare, formatWindow, formatSaved } = await import('./format');
+	assert.equal(formatMinutes(296, 1440), '296 minutes of the last 24 hours');
+	assert.equal(formatMinutes(1, 4320), '1 minute of the last 3 days');
+	assert.equal(formatMinuteCount(1288), '1,288 minutes');
+	assert.equal(formatPeriod(1), 'the last hour');
+	assert.equal(formatPeriod(168), 'the last 7 days');
+	assert.equal(formatMinutes(0, 60), '0 minutes of the last hour');
 	assert.equal(formatPercent(0.05), '5 %');
 	assert.equal(formatShare(306 / 1440), '21 %');
 	assert.equal(formatShare(22 / 1440), '1.5 %');
@@ -201,4 +205,23 @@ test('format helpers produce plain tile texts', async () => {
 	assert.equal(formatWindow(72), '3 days');
 	assert.equal(formatWindow(168), '7 days');
 	assert.equal(formatWindow(36), '36 hours');
+});
+
+test('per-hour rate rounds to whole minutes and says "less than 1" below one', async () => {
+	const { perHour, formatRate, formatRateCompare, formatMinutesShort } = await import('./format');
+	assert.equal(perHour(296, 1440), 12); // 12.33
+	assert.equal(perHour(300, 1440), 13); // 12.5 rounds up
+	assert.equal(perHour(23, 1440), null); // 0.96
+	assert.equal(perHour(24, 1440), 1);
+	assert.equal(perHour(0, 1440), 0);
+	assert.equal(perHour(17, 60), 17);
+	assert.equal(formatRate(296, 1440), 'about 12 minutes per hour');
+	assert.equal(formatRate(30, 1440), 'about 1 minute per hour');
+	assert.equal(formatRate(5, 1440), 'less than 1 minute per hour');
+	assert.equal(formatRate(0, 1440), '0 minutes per hour');
+	assert.equal(formatRateCompare(22, 296, 1440), 'less than 1 minute per hour instead of 12');
+	assert.equal(formatRateCompare(30, 296, 1440), 'about 1 minute per hour instead of 12');
+	assert.equal(formatMinutesShort(288, 1440), '288 min · ~12/h');
+	assert.equal(formatMinutesShort(3, 1440), '3 min · <1/h');
+	assert.equal(formatMinutesShort(1288, 10080), '1,288 min · ~8/h');
 });

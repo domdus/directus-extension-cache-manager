@@ -93,7 +93,7 @@ export function useCacheManager() {
 		message.value = null;
 		try {
 			const { data } = await api.post(`${base}/apply`, toOverride(state.value.baseline, draft));
-			await afterWrite(data, 'Saved and applied. The next writes and requests use the new values.');
+			await afterWrite(data, 'Saved. The new settings are in use now.');
 		} catch (err) {
 			error.value = errorText(err);
 		} finally {
@@ -103,13 +103,13 @@ export function useCacheManager() {
 
 	async function reset() {
 		if (!state.value) return;
-		if (!window.confirm('Remove the saved override and use the configured values again?')) return;
+		if (!window.confirm('Remove what you saved here and use the configured values again?')) return;
 		saving.value = true;
 		error.value = null;
 		message.value = null;
 		try {
 			const { data } = await api.post(`${base}/reset`);
-			await afterWrite(data, 'Reset. The configured values are in effect again.');
+			await afterWrite(data, 'Reset. The configured values are in use again.');
 		} catch (err) {
 			error.value = errorText(err);
 		} finally {
