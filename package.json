@@ -1,6 +1,6 @@
 {
 	"name": "directus-extension-cache-manager",
-	"description": "Manage the Directus response cache at runtime: set CACHE_AUTO_PURGE_IGNORE_LIST, CACHE_AUTO_PURGE and CACHE_SKIP_ALLOWED without a restart, based on an analysis of which collections clear the cache",
+	"description": "See which collections clear the Directus cache, choose which ones may, and set cache clearing and lifetime from the Studio without a restart",
 	"icon": "cached",
 	"version": "0.1.0",
 	"license": "MIT",
