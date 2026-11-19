@@ -72,7 +72,7 @@ test('analysis: a view counter dominates, ignoring it cuts purges', () => {
 	// Minutes only view_counter writes in: 300..999 (directus_users covers 0..299, analytics_events starts at 1000).
 	assert.equal(byName.view_counter.savedMinutes, 700);
 	assert.equal(byName.directus_users.recommended, false);
-	assert.equal(byName.directus_users.reason, 'System collection');
+	assert.equal(byName.directus_users.reason, 'Directus system collection');
 	assert.equal(byName.pages.recommended, false); // 20 / 1440 < 5 %
 	assert.deepEqual(analysis.recommendedList, ['view_counter', 'analytics_events', 'checkout_attempts']);
 
@@ -87,7 +87,7 @@ test('ignored collections are not recommended and save nothing more', () => {
 	const counter = analysis.collections.find((entry) => entry.collection === 'view_counter')!;
 	assert.equal(counter.ignored, true);
 	assert.equal(counter.recommended, false);
-	assert.equal(counter.reason, 'Already ignored');
+	assert.equal(counter.reason, 'Already selected');
 	assert.equal(counter.savedMinutes, 0);
 	assert.equal(analysis.purgeMinutes, 200);
 	assert.equal(analysis.whatIf, null);
@@ -98,7 +98,7 @@ test('recommendation rules: threshold, system collections, editor collections', 
 	assert.equal(recommendation({ ...base, collection: 'counter' }, WINDOW).recommended, true);
 	assert.equal(recommendation({ ...base, collection: 'counter', minutes: 71 }, WINDOW).recommended, false); // 4.9 %
 	assert.equal(recommendation({ ...base, collection: 'counter', minutes: 72 }, WINDOW).recommended, true); // 5 %
-	assert.equal(recommendation({ ...base, collection: 'articles', editorWrites: 60 }, WINDOW).reason, 'Mostly edited in the admin app');
+	assert.equal(recommendation({ ...base, collection: 'articles', editorWrites: 60 }, WINDOW).reason, 'Mostly edited by people in the Data Studio');
 	assert.equal(recommendation({ ...base, collection: 'articles', editorWrites: 50 }, WINDOW).recommended, true);
 	assert.equal(recommendation({ ...base, collection: 'directus_settings' }, WINDOW).recommended, false);
 	assert.equal(recommendation({ ...base, collection: 'directus_presets' }, WINDOW).recommended, true);
@@ -184,11 +184,21 @@ test('readValues / applyToEnv round trip on an env object', () => {
 	assert.deepEqual(readValues({}), { autoPurge: false, skipAllowed: false, ignoreList: [] });
 });
 
-test('format helpers produce self-explanatory tile texts', async () => {
-	const { formatMinutes, formatPercent, formatHours } = await import('./format');
-	assert.equal(formatMinutes(315, 1440), '315 of 1,440 minutes (21.9 %)');
-	assert.equal(formatMinutes(0, 0), '0 of 0 minutes (0 %)');
+test('format helpers produce plain tile texts', async () => {
+	const { formatMinutes, formatPercent, formatShare, formatWindow, formatSaved } = await import('./format');
+	assert.equal(formatMinutes(306, 1440), '306 of the last 1,440 minutes (24 hours)');
+	assert.equal(formatMinutes(0, 60), '0 of the last 60 minutes (1 hour)');
 	assert.equal(formatPercent(0.05), '5 %');
-	assert.equal(formatHours(1), 'hour');
-	assert.equal(formatHours(24), '24 hours');
+	assert.equal(formatShare(306 / 1440), '21 %');
+	assert.equal(formatShare(22 / 1440), '1.5 %');
+	assert.equal(formatShare(0), '0 %');
+	assert.equal(formatShare(0.0004), '< 0.1 %');
+	assert.equal(formatSaved(288 / 1440), '−20 %');
+	assert.equal(formatSaved(0), '0 %');
+	assert.equal(formatWindow(1), '1 hour');
+	assert.equal(formatWindow(6), '6 hours');
+	assert.equal(formatWindow(24), '24 hours');
+	assert.equal(formatWindow(72), '3 days');
+	assert.equal(formatWindow(168), '7 days');
+	assert.equal(formatWindow(36), '36 hours');
 });

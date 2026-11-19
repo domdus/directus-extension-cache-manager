@@ -24,32 +24,28 @@
 					or environment variables).
 				</p>
 				<p class="sidebar-text">
-					An <strong>override</strong> saved here wins until you reset it. It takes effect at once, without a restart,
-					and is applied again after every restart.
+					What you save here replaces them right away, without a restart, and stays after a restart until you reset it.
 				</p>
-				<p class="sidebar-text">
-					The change applies to the Directus process that handles the save. With several instances, restart the others
-					after saving so they apply the override too.
-				</p>
+				<p class="sidebar-text">If Directus runs more than once (several servers), restart the others after saving.</p>
 			</sidebar-detail>
-			<sidebar-detail id="auto-purge" icon="delete_sweep" title="CACHE_AUTO_PURGE">
+			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Empty the cache when content changes">
 				<p class="sidebar-text">
-					<strong>On:</strong> every write to a collection that is not ignored clears the <em>whole</em> response cache.
+					<strong>On:</strong> any change to a collection that is not selected empties the whole cache, so everyone sees
+					the change right away.
 				</p>
 				<p class="sidebar-text">
-					<strong>Off:</strong> nothing is cleared on writes. Data is only refreshed after CACHE_TTL, so editors' changes
-					take up to CACHE_TTL to appear.
+					<strong>Off:</strong> changes only show up when cached answers expire (CACHE_TTL). Editors may wait that long
+					to see their changes.
 				</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on.</p>
 			</sidebar-detail>
-			<sidebar-detail id="skip-allowed" icon="bolt" title="CACHE_SKIP_ALLOWED">
+			<sidebar-detail id="skip-allowed" icon="bolt" title="Allow apps to skip the cache">
 				<p class="sidebar-text">
-					<strong>On:</strong> a client can bypass the cache for one request with the header
-					<code>Cache-Control: no-store</code>. Apps need this to read ignored collections fresh.
+					<strong>On:</strong> an app can ask for fresh data by sending the header <code>Cache-Control: no-store</code>.
+					Apps need this to read selected collections up to date.
 				</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on, for a Directus that is not open to the public.</p>
 			</sidebar-detail>
-			<stale-reads-detail />
 		</template>
 
 		<div :class="pageClass">
@@ -83,29 +79,29 @@
 					</thead>
 					<tbody>
 						<tr>
-							<td><code>CACHE_AUTO_PURGE</code></td>
+							<td>Empty the cache when content changes <span class="env-name">CACHE_AUTO_PURGE</span></td>
 							<td>{{ onOff(state.baseline.autoPurge) }}</td>
 							<td>{{ state.stored?.autoPurge == null ? '–' : onOff(state.stored.autoPurge) }}</td>
 							<td><strong>{{ onOff(state.effective.autoPurge) }}</strong></td>
 						</tr>
 						<tr>
-							<td><code>CACHE_SKIP_ALLOWED</code></td>
+							<td>Allow apps to skip the cache <span class="env-name">CACHE_SKIP_ALLOWED</span></td>
 							<td>{{ onOff(state.baseline.skipAllowed) }}</td>
 							<td>{{ state.stored?.skipAllowed == null ? '–' : onOff(state.stored.skipAllowed) }}</td>
 							<td><strong>{{ onOff(state.effective.skipAllowed) }}</strong></td>
 						</tr>
 						<tr>
-							<td><code>CACHE_AUTO_PURGE_IGNORE_LIST</code></td>
+							<td>Collections whose changes don't empty the cache <span class="env-name">CACHE_AUTO_PURGE_IGNORE_LIST</span></td>
 							<td>{{ listText(state.baseline.ignoreList) }}</td>
 							<td>{{ state.stored?.ignoreList == null ? '–' : listText(state.stored.ignoreList) }}</td>
 							<td><strong>{{ listText(state.effective.ignoreList) }}</strong></td>
 						</tr>
 						<tr class="readonly">
-							<td><code>CACHE_TTL</code></td>
+							<td>How long answers stay in the cache <span class="env-name">CACHE_TTL</span></td>
 							<td colspan="3">{{ state.env.CACHE_TTL ?? '–' }} <span class="subdued">(read only)</span></td>
 						</tr>
 						<tr class="readonly">
-							<td><code>CACHE_STORE</code></td>
+							<td>Where the cache is kept <span class="env-name">CACHE_STORE</span></td>
 							<td colspan="3">{{ state.env.CACHE_STORE ?? '–' }} <span class="subdued">(read only)</span></td>
 						</tr>
 					</tbody>
@@ -118,16 +114,30 @@
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="cached" /></template>
-					Purge behaviour
+					When the cache is emptied
 				</v-divider>
 
 				<div class="toggles">
-					<v-checkbox v-model="draft.autoPurge" block label="Clear the cache on writes (CACHE_AUTO_PURGE)" />
-					<v-checkbox v-model="draft.skipAllowed" block label="Let clients bypass the cache (CACHE_SKIP_ALLOWED)" />
+					<div>
+						<v-checkbox v-model="draft.autoPurge" block label="Empty the cache when content changes" />
+						<span class="env-name">CACHE_AUTO_PURGE</span>
+					</div>
+					<div>
+						<v-checkbox v-model="draft.skipAllowed" block label="Allow apps to skip the cache" />
+						<span class="env-name">CACHE_SKIP_ALLOWED</span>
+					</div>
 				</div>
+				<p class="ttl-note">
+					<v-icon name="schedule" small />
+					<span>
+						Selected collections can be served from the cache for up to <strong>{{ state.env.CACHE_TTL ?? '–' }}</strong>
+						after a change (CACHE_TTL, read from the running configuration). Apps can ask for fresh data with the header
+						<code>Cache-Control: no-store</code> when "Allow apps to skip the cache" is on.
+					</span>
+				</p>
 				<p class="meta">
-					Ignore list: {{ listText(draft.ignoreList) }}.
-					<router-link to="/cache-manager/analysis">Choose collections in Analysis</router-link>
+					Collections whose changes don't empty the cache: {{ listText(draft.ignoreList) }}.
+					<router-link to="/cache-manager/analysis">Choose them in Analysis</router-link>
 				</p>
 			</template>
 		</div>
@@ -138,7 +148,6 @@
 import { onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import PendingChanges from './pending-changes.vue';
-import StaleReadsDetail from './stale-reads-detail.vue';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
@@ -213,6 +222,27 @@ th {
 	display: grid;
 	gap: 12px;
 	max-inline-size: 36rem;
+}
+td .env-name {
+	display: block;
+}
+.env-name {
+	color: var(--theme--foreground-subdued);
+	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-size: 12px;
+}
+.toggles .env-name {
+	margin: 4px 0 0 2px;
+	display: block;
+}
+.ttl-note {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	margin-top: 16px;
+	max-inline-size: 42rem;
+	line-height: 1.55;
+	color: var(--theme--foreground-subdued);
 }
 code {
 	font-family: var(--theme--fonts--monospace--font-family, monospace);

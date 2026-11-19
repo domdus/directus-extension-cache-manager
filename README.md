@@ -1,14 +1,16 @@
 # Cache Manager
 
-Control how Directus clears its response cache while it runs: set `CACHE_AUTO_PURGE_IGNORE_LIST`, `CACHE_AUTO_PURGE` and `CACHE_SKIP_ALLOWED` from a module, without editing configuration or restarting. An analysis shows which collections clear the cache, and how often, and recommends which ones to ignore.
+Control when Directus empties its cache, while it runs and without a restart. An analysis shows which collections empty the cache, how much of the time the cache is empty, and suggests which collections should stop emptying it.
 
-Open **Cache Manager** from the module bar (admins only). **Status** shows the values in effect and the purge toggles. **Analysis** shows the collections that clear the cache and lets you pick the ignore list.
+It manages three Directus settings: `CACHE_AUTO_PURGE`, `CACHE_SKIP_ALLOWED` and `CACHE_AUTO_PURGE_IGNORE_LIST`.
+
+Open **Cache Manager** from the module bar (admins only). **Status** shows the values in effect and the on/off switches. **Analysis** shows which collections empty the cache and lets you choose the ones that should not.
 
 ## Why
 
-With `CACHE_AUTO_PURGE` on, every write to a collection that is not in the ignore list clears the **whole** response cache. One busy collection, such as a view counter or an analytics log, can clear it almost every minute, so the cache rarely gets to serve a response.
+Directus keeps answers in a cache so it does not have to read the database every time. By default, any change to any collection empties the **whole** cache. While the cache is empty, Directus has to build every answer from the database again, which is slower.
 
-Finding that collection usually means querying the activity log by hand, editing the configuration and restarting Directus, then checking again. This extension does the counting for you and applies a new ignore list at once.
+One busy collection, such as a view counter or a statistics log, can empty the cache almost every minute, so the cache hardly helps. Finding that collection usually means querying the activity log by hand, editing the configuration and restarting Directus. This extension does the counting for you and applies the change at once.
 
 ## Installation
 
@@ -44,35 +46,35 @@ npm run build
 
 ## Configure
 
-1. Open **Cache Manager → Analysis** and pick a time window (1 hour to 7 days).
-2. Tick the collections to ignore, or click **Select recommended**. The tile **After saving your selection** shows how many minutes with a full purge would remain.
-3. Optionally change the toggles on **Status**. Both pages edit the same selection, and a notice lists what is not saved yet.
-4. Click **Save & apply** (top right, on either page). The next writes and requests use the new values.
+1. Open **Cache Manager → Analysis** and pick a time window (1 hour to 7 days). The first tile shows how much of that time the cache was empty.
+2. Tick the collections whose changes should not empty the cache, or click **Select suggestion** in the Suggestion tile. The tile **With your selection** shows how much of the time the cache would be empty then.
+3. Optionally change the switches on **Status**. Both pages edit the same selection, and a notice lists what is not saved yet.
+4. Click **Save & apply** (top right, on either page). It takes effect at once.
 
 **Reset** on the Status page removes the override and uses the configured values again.
 
 ## The settings
 
-| Setting | On | Off | Recommended |
-|---|---|---|---|
-| `CACHE_AUTO_PURGE` | Every write to a collection that is not ignored clears the whole response cache | Nothing is cleared on writes. Data refreshes only after `CACHE_TTL`, so editors' changes take up to `CACHE_TTL` to appear | On |
-| `CACHE_SKIP_ALLOWED` | Clients can bypass the cache for one request with `Cache-Control: no-store`. Apps need this to read ignored collections fresh | The header is ignored | On, for a Directus that is not open to the public |
-| `CACHE_AUTO_PURGE_IGNORE_LIST` | Writes to these collections do not clear the cache | | Write-heavy collections that apps do not read through the cache, or read with `no-store` |
+| In the module | Setting | On | Off | Recommended |
+|---|---|---|---|---|
+| Empty the cache when content changes | `CACHE_AUTO_PURGE` | Any change to a collection that is not selected empties the whole cache, so everyone sees changes right away | Nothing empties the cache. Changes appear only when cached answers expire after `CACHE_TTL`, so editors may wait that long | On |
+| Allow apps to skip the cache | `CACHE_SKIP_ALLOWED` | An app can ask for fresh data with the header `Cache-Control: no-store` | The header has no effect | On, for a Directus that is not open to the public |
+| Collections whose changes don't empty the cache | `CACHE_AUTO_PURGE_IGNORE_LIST` | | | Collections that change very often and that nobody needs up to date to the second: counters, logs, statistics |
 
-Do not ignore collections that apps read for access decisions (subscriptions, purchases, entitlements), unless those reads send `Cache-Control: no-store`. Otherwise a user can get or lose access up to `CACHE_TTL` late.
+Selected collections can be served from the cache for up to `CACHE_TTL` after a change. Apps can ask for fresh data with `Cache-Control: no-store` when **Allow apps to skip the cache** is on. The Data Studio always reads selected collections fresh. The Status page shows the real `CACHE_TTL` and `CACHE_STORE`, but does not change them.
 
-Reads of an ignored collection can be up to `CACHE_TTL` old for apps, unless they send `Cache-Control: no-store`, which only works with `CACHE_SKIP_ALLOWED` on. The Data Studio always bypasses the cache for ignored collections. `CACHE_TTL` and `CACHE_STORE` are shown, but not changed.
+Do not select collections that decide what users may see or buy (subscriptions, purchases, access rights), unless the apps reading them ask for fresh data. Otherwise a user can get or lose access up to `CACHE_TTL` late.
 
-## Recommendations
+## Suggestions
 
-A collection is recommended when all of these are true (constants in `src/shared/constants.ts`):
+A collection is suggested when all of these are true (constants in `src/shared/constants.ts`):
 
-- it is not ignored yet,
-- it was written in at least **5 %** of the minutes in the window,
-- it is not a system collection. `directus_*` collections are never recommended, except `directus_activity`, `directus_presets`, `directus_notifications` and `directus_revisions`,
-- it is not mostly edited in the Data Studio: at most **50 %** of its writes came from logged-in users whose request origin was `PUBLIC_URL`. This check needs an absolute `PUBLIC_URL`.
+- it is not selected yet,
+- it changed in at least **5 %** of the minutes in the time window,
+- it is not a Directus system collection. `directus_*` collections are never suggested, except `directus_activity`, `directus_presets`, `directus_notifications` and `directus_revisions`,
+- it is not mostly edited by people in the Data Studio: at most **50 %** of its changes came from logged-in users whose request origin was `PUBLIC_URL`. This check needs a full `PUBLIC_URL`.
 
-**Purge minutes saved** in the table is the number of minutes that would no longer have a full purge if you also ignored that collection.
+The analysis counts in minutes: a minute counts as "cache emptied" when at least one change to a collection that is not selected happened in it. Several changes in the same minute count once. **Effect if selected** in the table is how much less of the time the cache would be emptied if you also selected that collection.
 
 ## How it works
 
@@ -89,9 +91,9 @@ The analysis is one aggregate query on `directus_activity` (creates, updates and
 ## What to know
 
 - **One process.** A save changes the Directus process that handles it. With several instances, restart the others after saving; they apply the override at startup. The Status page warns when the running values differ from the configured values plus the override.
-- **The analysis can undercount.** Writes made without a user context (some Flows run with no accountability) are not logged in `directus_activity`. Batch writes count every item, but clear the cache once.
+- **The analysis can undercount.** Changes made without a user context (some Flows run with no accountability) are not in the activity log (`directus_activity`), so the real numbers can be higher.
 - **Databases.** The analysis supports Postgres and MySQL. On other databases it returns an error; the settings still work.
-- **Saving clears the cache once**, because it writes to `directus_settings`.
+- **Saving empties the cache once**, because it writes to `directus_settings`.
 - **Schema snapshots** include the `cache_manager` field on `directus_settings`.
 
 ## API
