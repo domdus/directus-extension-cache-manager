@@ -91,13 +91,15 @@ export function recommendation(
 	const share = windowMinutes ? stats.minutes / windowMinutes : 0;
 	if (stats.ignored) return { recommended: false, reason: 'Already selected' };
 	if (!isRecommendable(stats.collection)) return { recommended: false, reason: 'Directus system collection' };
-	if (share < RECOMMEND_MIN_SHARE) return { recommended: false, reason: `Changes in less than ${pct(RECOMMEND_MIN_SHARE)} of minutes` };
+	if (share < RECOMMEND_MIN_SHARE) return { recommended: false, reason: `Changes less than ${perHourText(RECOMMEND_MIN_SHARE)} times per hour` };
 	if (stats.writes && stats.editorWrites / stats.writes > EDITOR_SHARE_MAX) return { recommended: false, reason: 'Mostly changed by editors in the Data Studio' };
-	return { recommended: true, reason: `Changes in ${pct(share)} of minutes` };
+	return { recommended: true, reason: `Changes about ${perHourText(share)} times per hour` };
 }
 
-function pct(share: number): string {
-	return `${Math.round(share * 1000) / 10} %`;
+/** Share of minutes as changes per hour (5 % of minutes = 3 per hour). */
+function perHourText(share: number): string {
+	const rate = share * 60;
+	return rate < 1 ? 'less than 1' : String(Math.round(rate));
 }
 
 export type AnalysisOptions = {

@@ -45,7 +45,7 @@ npm run build
 ## Configure
 
 1. Open **Cache Manager → Collections** and pick a time period (last hour to last 7 days).
-2. Read the first tile, **How often the cache is cleared**. Example: "21 % of all minutes. The cache was cleared in 296 minutes of the last 24 hours (about 12 minutes per hour)." Lower is better.
+2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared in 296 minutes of the last 24 hours." Lower is better.
 3. Tick the collections whose changes should not clear the cache, or click **Select suggestion** in the **Suggestion** tile. The tile **With your selection** shows the new value, for example "about 1 minute per hour instead of 12".
 4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share one selection. A notice lists what is not saved yet.
 5. Click **Save & apply** (top right, on either page). It is used right away.
@@ -72,7 +72,7 @@ Don't select collections that decide what users may see or buy, like subscriptio
 ## How the Collections page counts
 
 - A minute counts as "cleared" when at least one collection that is not selected changed in it. Several changes in the same minute count as one.
-- **How often the cache is cleared** is the share of all minutes in the chosen period. Lower is better.
+- **How often the cache is cleared** shows how many times per hour the cache was cleared in the chosen period (several clears in the same minute count once). Lower is better.
 - **Changed in** shows, per collection, the minutes with at least one change, and how many that is per hour (for example "288 min · ~12/h").
 - **Effect if selected** shows how much less often the cache would be cleared if you also select that collection. A bigger drop is better.
 - The numbers come from the activity log. Some automatic changes, for example from some Flows, are not in the activity log. The real numbers can be higher.
@@ -82,7 +82,7 @@ Don't select collections that decide what users may see or buy, like subscriptio
 A collection is suggested when all of these are true (limits in `src/shared/constants.ts`):
 
 - it is not selected yet,
-- it changed in at least **5 %** of all minutes in the chosen period,
+- it changed at least **3 times per hour** in the chosen period,
 - it is not a Directus system collection. `directus_*` collections are never suggested, except `directus_activity`, `directus_presets`, `directus_notifications` and `directus_revisions`,
 - it is not mostly changed by editors in the Data Studio: at most **50 %** of its changes came from logged-in users on the public address of Directus (`PUBLIC_URL`). This check needs a full address there.
 

@@ -43,7 +43,7 @@
 			<sidebar-detail id="recommendations" icon="recommend" title="How suggestions are made">
 				<p class="sidebar-text">A collection is suggested when it</p>
 				<ul class="sidebar-list">
-					<li>changes in at least {{ formatPercent(RECOMMEND_MIN_SHARE) }} of all minutes,</li>
+					<li>changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }} times per hour,</li>
 					<li>is not a Directus system collection,</li>
 					<li>is not mostly changed by editors in the Data Studio.</li>
 				</ul>
@@ -71,13 +71,12 @@
 					<div class="tile">
 						<span class="label">How often the cache is cleared</span>
 						<div class="figure">
-							<span class="value">{{ formatShare(nowShare) }}</span>
-							<span class="unit">of all minutes</span>
+							<span class="value">{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
+							<span class="unit">times per hour</span>
 						</div>
 						<span class="explain">
-							The cache was cleared in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}
-							({{ formatRate(analysis.purgeMinutes, analysis.windowMinutes) }}). Lower is better:
-							after clearing, Directus has to load everything from the database again.
+							The cache was cleared in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}.
+							Lower is better: after clearing, Directus has to load everything from the database again.
 						</span>
 					</div>
 
@@ -85,12 +84,11 @@
 						<span class="label">With your selection</span>
 						<template v-if="dirty">
 							<div class="figure">
-								<span class="value">{{ formatShare(share(whatIf)) }}</span>
-								<span class="unit">instead of {{ formatShare(nowShare) }}</span>
+								<span class="value">{{ formatTimesPerHour(whatIf, analysis.windowMinutes) }}</span>
+								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
 							</div>
 							<span class="explain">
-								The cache would have been cleared in {{ formatMinutes(whatIf, analysis.windowMinutes) }}
-								({{ formatRateCompare(whatIf, analysis.purgeMinutes, analysis.windowMinutes) }}). Lower is better.
+								The cache would have been cleared in {{ formatMinutes(whatIf, analysis.windowMinutes) }}. Lower is better.
 							</span>
 						</template>
 						<span v-else class="explain">No changes selected yet. Tick collections in the table below to see the effect here.</span>
@@ -100,8 +98,8 @@
 						<span class="label">Suggestion</span>
 						<template v-if="analysis.recommendedList.length">
 							<div class="figure">
-								<span class="value">{{ formatShare(share(analysis.recommendedPurgeMinutes)) }}</span>
-								<span class="unit">instead of {{ formatShare(nowShare) }}</span>
+								<span class="value">{{ formatTimesPerHour(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}</span>
+								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
 							</div>
 							<span class="text">
 								Don't clear the cache when {{ analysis.recommendedList.length === 1 ? 'this collection changes' : 'these collections change' }}:
@@ -109,9 +107,7 @@
 							</span>
 							<span class="explain">
 								The cache would have been cleared in
-								{{ formatMinutes(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}
-								({{ formatRateCompare(analysis.recommendedPurgeMinutes, analysis.purgeMinutes, analysis.windowMinutes) }}).
-								Lower is better.
+								{{ formatMinutes(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}. Lower is better.
 							</span>
 							<div>
 								<v-button small :secondary="!addableRecommendations.length" :disabled="!addableRecommendations.length" @click="add(addableRecommendations)">
@@ -124,8 +120,12 @@
 					</div>
 				</div>
 
-				<div class="toolbar">
-					<span class="subdued">All numbers: {{ formatPeriod(analysis.hours) }}.</span>
+				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
+					<template #icon><v-icon name="schedule" /></template>
+					Changes in {{ formatPeriod(analysis.hours) }}
+				</v-divider>
+
+				<div class="toolbar toolbar--end">
 					<div class="add-other">
 						<v-select
 							:model-value="null"
@@ -137,10 +137,11 @@
 					</div>
 				</div>
 
+				<div class="table-wrap">
 				<table class="analysis">
 					<thead>
 						<tr>
-							<th>Don't clear the cache on changes</th>
+							<th class="check-col">Don't clear</th>
 							<th>Collection</th>
 							<th class="num">Changes</th>
 							<th class="num">Changed in</th>
@@ -151,11 +152,11 @@
 					</thead>
 					<tbody>
 						<tr v-for="row in rows" :key="row.collection">
-							<td><v-checkbox :model-value="draftSet.has(row.collection)" @update:model-value="toggle(row.collection, $event)" /></td>
-							<td><code>{{ row.collection }}</code></td>
+							<td class="check-col"><v-checkbox :model-value="draftSet.has(row.collection)" @update:model-value="toggle(row.collection, $event)" /></td>
+							<td class="name">{{ row.collection }}</td>
 							<td class="num">{{ formatNumber(row.writes) }}</td>
 							<td class="num">{{ formatMinutesShort(row.minutes, analysis.windowMinutes) }}</td>
-							<td class="num">{{ row.ignored ? '–' : formatSaved(share(row.savedMinutes)) }}</td>
+							<td class="num">{{ row.ignored ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
 							<td>{{ row.ignored ? 'Already selected' : '–' }}</td>
 							<td>
 								<span v-if="row.recommended" class="badge">Suggested</span>
@@ -164,11 +165,12 @@
 						</tr>
 					</tbody>
 				</table>
+				</div>
 
 				<p class="meta">
 					{{ new Date(analysis.from).toLocaleString() }} to {{ new Date(analysis.to).toLocaleString() }}.
-					"Changed in" counts the minutes with at least one change, and how many that is per hour. "Effect if selected" shows how much less often the
-					cache would be cleared if you also select that collection. A bigger drop is better.
+					"Changed in" counts the minutes with at least one change, and how many that is per hour. "Effect if selected" shows how many times per hour
+					less the cache would be cleared if you also select that collection. A bigger drop is better.
 					<template v-if="!analysis.editorHeuristic">
 						The public address of Directus is not a full URL, so changes by editors can't be told apart from changes by
 						apps.
@@ -187,12 +189,9 @@ import {
 	formatMinutes,
 	formatMinutesShort,
 	formatNumber,
-	formatPercent,
 	formatPeriod,
-	formatRate,
-	formatRateCompare,
-	formatSaved,
-	formatShare,
+	formatSavedPerHour,
+	formatTimesPerHour,
 	formatWindow,
 } from '../shared/format';
 import ModuleNavigation from './navigation.vue';
@@ -207,11 +206,6 @@ const { state, analysis, draft, draftSet, hours, busy, dirty, canSave, saving, l
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
 const hourItems = [1, 6, 24, 72, 168].map((value) => ({ text: `Last ${formatWindow(value)}`, value }));
 
-function share(minutes: number): number {
-	const total = analysis.value?.windowMinutes ?? 0;
-	return total ? minutes / total : 0;
-}
-const nowShare = computed(() => share(analysis.value?.purgeMinutes ?? 0));
 
 /** Collections with changes plus every selected or configured collection, so nothing selected is hidden. */
 const rows = computed<CollectionStats[]>(() => {
@@ -296,6 +290,9 @@ onMounted(async () => {
 	flex-wrap: wrap;
 	margin-bottom: 16px;
 }
+.toolbar--end {
+	justify-content: flex-end;
+}
 .add-other {
 	width: 100%;
 	max-width: 320px;
@@ -358,20 +355,44 @@ onMounted(async () => {
 .meta {
 	margin-top: 12px;
 }
+.table-wrap {
+	overflow: auto;
+	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
+	border-radius: var(--theme--border-radius);
+}
 table {
 	width: 100%;
 	border-collapse: collapse;
+	font-size: 13px;
 }
 th,
 td {
-	text-align: left;
 	padding: 8px 10px;
-	border-bottom: var(--theme--border-width, 1px) solid var(--theme--border-color-subdued);
+	text-align: left;
 	vertical-align: middle;
+	border-bottom: var(--theme--border-width) solid var(--theme--border-color-subdued);
+}
+tbody tr:last-child td {
+	border-bottom: none;
 }
 th {
-	color: var(--theme--foreground-subdued);
-	font-weight: 600;
+	font-weight: 700;
+	background: var(--theme--background-subdued);
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+.name {
+	font-family: var(--theme--fonts--monospace--font-family, monospace);
+}
+.check-col {
+	width: 36px;
+	padding-left: 8px;
+	padding-right: 4px;
+	white-space: nowrap;
+}
+.check-col :deep(.v-checkbox) {
+	margin: 0;
 }
 .num {
 	text-align: right;

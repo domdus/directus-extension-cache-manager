@@ -61,6 +61,22 @@ function rateNumber(minutes: number, windowMinutes: number): string {
 	return rate === null ? 'less than 1' : formatNumber(rate);
 }
 
+/**
+ * Big tile number: how many times per hour the cache is cleared ("12", "<1", "0").
+ * Counted per minute: several clears in the same minute count once.
+ */
+export function formatTimesPerHour(minutes: number, windowMinutes: number): string {
+	const rate = perHour(minutes, windowMinutes);
+	if (rate === null) return '<1';
+	return formatNumber(rate);
+}
+
+/** Table "Effect if selected": "−12/h", "−<1/h", "0". */
+export function formatSavedPerHour(minutes: number, windowMinutes: number): string {
+	if (!(minutes > 0)) return '0';
+	return `−${formatTimesPerHour(minutes, windowMinutes)}/h`;
+}
+
 /** "about 12 minutes per hour", "about 1 minute per hour", "less than 1 minute per hour". */
 export function formatRate(minutes: number, windowMinutes: number): string {
 	const rate = perHour(minutes, windowMinutes);

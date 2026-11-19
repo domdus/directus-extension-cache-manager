@@ -286,3 +286,17 @@ test('completeBaseline fills settings an older extension version did not keep', 
 	assert.deepEqual(completeBaseline(kept, fromEnv), { autoPurge: false, skipAllowed: true, ignoreList: ['b'], ttl: '3h' });
 	assert.deepEqual(completeBaseline({ ...kept, ttl: '1h' }, fromEnv).ttl, '1h');
 });
+
+test('formatTimesPerHour: whole numbers, "<1" below one per hour', async () => {
+	const { formatTimesPerHour } = await import('./format');
+	assert.equal(formatTimesPerHour(296, 1440), '12');
+	assert.equal(formatTimesPerHour(9, 1440), '<1');
+	assert.equal(formatTimesPerHour(0, 1440), '0');
+});
+
+test('formatSavedPerHour for the table', async () => {
+	const { formatSavedPerHour } = await import('./format');
+	assert.equal(formatSavedPerHour(284, 1440), '−12/h');
+	assert.equal(formatSavedPerHour(3, 1440), '−<1/h');
+	assert.equal(formatSavedPerHour(0, 1440), '0');
+});
