@@ -146,14 +146,6 @@
 						<span class="check-label">Allow apps to skip the cache <span class="env-name">CACHE_SKIP_ALLOWED</span></span>
 					</v-checkbox>
 				</div>
-				<v-notice type="info" class="ttl-notice">
-					<div>
-						Selected collections can be served from the cache for up to <strong>{{ state.effective.ttl }}</strong>
-						after a change. Apps can ask for fresh data with the header <code>Cache-Control: no-store</code> when "Allow
-						apps to skip the cache" is on.
-						<span class="env-name block">CACHE_TTL, the value in use now</span>
-					</div>
-				</v-notice>
 			</template>
 		</div>
 	</private-view>
@@ -227,10 +219,6 @@ onMounted(() => loadState(true));
 	color: var(--theme--foreground-subdued);
 	font-family: var(--theme--fonts--monospace--font-family, monospace);
 	font-size: 12px;
-}
-.ttl-notice {
-	margin-top: 16px;
-	max-inline-size: 42rem;
 }
 .cards {
 	display: grid;
