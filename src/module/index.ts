@@ -23,7 +23,7 @@ export default defineModule({
 			component: SettingsView,
 		},
 		{
-			// Earlier names of the Cache clearing page.
+			// Earlier names of the Cache Clearing page.
 			path: 'collections',
 			redirect: '/cache-manager/clearing',
 		},

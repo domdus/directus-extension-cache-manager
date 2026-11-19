@@ -1,5 +1,5 @@
 <template>
-	<private-view title="Cache clearing" icon="list_alt">
+	<private-view title="Cache Clearing" icon="list_alt">
 		<template #headline>
 			<v-breadcrumb :items="[{ name: 'Cache Manager', to: '/cache-manager' }]" />
 		</template>
