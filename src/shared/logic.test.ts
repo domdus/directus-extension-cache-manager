@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aggregate, buildAnalysis, isRecommendable, parseHours, purgeMinutes, recommendation, toBuckets, type ActivityBucket } from './analysis';
-import { applyToEnv, mergeValues, parseStored, readValues, toOverride, validateInput, type CacheValues } from './settings';
+import { applyToEnv, completeBaseline, mergeValues, parseStored, readValues, toOverride, validateInput, type CacheValues } from './settings';
 import { durationText, isValidTtl, sameDuration } from './duration';
 
 const WINDOW = 1440;
@@ -278,4 +278,11 @@ test('sameDuration and durationText accept a cleared input (null/undefined)', ()
 	assert.equal(sameDuration(undefined, undefined), true);
 	assert.equal(sameDuration('1h', '60m'), true);
 	assert.equal(isValidTtl(null), false);
+});
+
+test('completeBaseline fills settings an older extension version did not keep', () => {
+	const fromEnv = { autoPurge: true, skipAllowed: true, ignoreList: ['a'], ttl: '3h' };
+	const kept = { autoPurge: false, skipAllowed: true, ignoreList: ['b'] };
+	assert.deepEqual(completeBaseline(kept, fromEnv), { autoPurge: false, skipAllowed: true, ignoreList: ['b'], ttl: '3h' });
+	assert.deepEqual(completeBaseline({ ...kept, ttl: '1h' }, fromEnv).ttl, '1h');
 });

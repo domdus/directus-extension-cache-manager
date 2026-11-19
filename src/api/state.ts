@@ -1,5 +1,5 @@
 import { LOG_PREFIX, SETTINGS_FIELD } from '../shared/constants';
-import { applyToEnv, mergeValues, parseStored, readValues, type CacheValues, type StoredOverride } from '../shared/settings';
+import { applyToEnv, completeBaseline, mergeValues, parseStored, readValues, type CacheValues, type StoredOverride } from '../shared/settings';
 
 type Env = Record<string, unknown>;
 type Knex = any;
@@ -24,15 +24,24 @@ function processState(): ProcessState {
 	return (holder[KEY] ??= { baseline: null, startupApplied: false });
 }
 
-/** Captures the config values once per process, before any override is applied. */
+/**
+ * Captures the config values once per process, before any override is applied.
+ * A baseline kept from an older version of this extension (updated and reloaded without a restart)
+ * can miss settings that version did not manage yet; those are filled from env, which that version
+ * never changed, so env still holds their configured value.
+ */
 export function captureBaseline(env: Env): CacheValues {
 	const state = processState();
-	if (!state.baseline) state.baseline = readValues(env);
+	if (!state.baseline) {
+		state.baseline = readValues(env);
+	} else {
+		state.baseline = completeBaseline(state.baseline, readValues(env));
+	}
 	return state.baseline;
 }
 
 export function getBaseline(env: Env): CacheValues {
-	return processState().baseline ?? captureBaseline(env);
+	return captureBaseline(env);
 }
 
 export function markStartupApplied() {

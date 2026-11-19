@@ -66,6 +66,16 @@ export function readValues(env: Env): CacheValues {
 	};
 }
 
+/** Fills settings missing in a baseline kept from an older extension version (see captureBaseline). */
+export function completeBaseline(kept: Partial<CacheValues>, fromEnv: CacheValues): CacheValues {
+	return {
+		autoPurge: typeof kept.autoPurge === 'boolean' ? kept.autoPurge : fromEnv.autoPurge,
+		skipAllowed: typeof kept.skipAllowed === 'boolean' ? kept.skipAllowed : fromEnv.skipAllowed,
+		ignoreList: Array.isArray(kept.ignoreList) ? [...kept.ignoreList] : [...fromEnv.ignoreList],
+		ttl: typeof kept.ttl === 'string' && kept.ttl.trim() ? kept.ttl : fromEnv.ttl,
+	};
+}
+
 /** Writes values into env. Directus reads these keys live on every write / request. */
 export function applyToEnv(env: Env, values: CacheValues) {
 	env[ENV_KEYS.autoPurge] = values.autoPurge;
