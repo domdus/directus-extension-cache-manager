@@ -12,9 +12,6 @@
 			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loadingAnalysis" :disabled="saving" @click="loadAnalysis">
 				<v-icon name="refresh" small />
 			</v-button>
-			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!canSave || busy" @click="save">
-				<v-icon name="check" small />
-			</v-button>
 		</template>
 
 		<template #sidebar>
@@ -234,6 +231,8 @@
 					</template>
 				</p>
 			</template>
+
+			<save-bar />
 		</div>
 	</private-view>
 </template>
@@ -254,11 +253,12 @@ import {
 } from '../shared/format';
 import ModuleNavigation from './navigation.vue';
 import PendingChanges from './pending-changes.vue';
+import SaveBar from './save-bar.vue';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
 const pageClass = usePageClass();
-const { state, analysis, draft, draftSet, hours, busy, dirty, canSave, saving, loadingAnalysis, whatIf, error, message, loadState, loadAnalysis, save, toggle, add } =
+const { state, analysis, draft, draftSet, hours, busy, dirty, saving, loadingAnalysis, whatIf, error, message, loadState, loadAnalysis, toggle, add } =
 	useCacheManager();
 
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
@@ -520,7 +520,7 @@ th {
 .state--clears {
 	color: var(--theme--warning);
 }
-/* Not saved yet: what Save & apply will change. */
+/* Not saved yet: what Save & Apply will change. */
 .state--pending {
 	font-style: italic;
 }

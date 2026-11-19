@@ -438,3 +438,16 @@ test('selectionChanges splits the selection into what each action changes', asyn
 	assert.deepEqual(selectionChanges([], ['b']), { toIgnore: [], toStop: [] });
 	assert.deepEqual(selectionChanges(['b'], ['b']), { toIgnore: [], toStop: ['b'] });
 });
+
+test('pendingChanges lists each unsaved change; saveBarText counts them', async () => {
+	const { pendingChanges, saveBarText } = await import('./pending');
+	const effective: CacheValues = { autoPurge: true, skipAllowed: false, ignoreList: ['a', 'b'], ttl: '5m' };
+	assert.deepEqual(pendingChanges({ ...effective, ignoreList: ['b', 'a'], ttl: '300000' }, effective), []);
+	assert.deepEqual(pendingChanges({ autoPurge: false, skipAllowed: true, ignoreList: ['a', 'c'], ttl: '1h' }, effective).length, 5);
+	assert.deepEqual(pendingChanges({ ...effective, ignoreList: ['a', 'c', 'd'] }, effective), ['ignore c, d', 'stop ignoring b']);
+	assert.deepEqual(pendingChanges(effective, null), []);
+	assert.deepEqual(saveBarText(0, true), { text: 'No unsaved changes', danger: false });
+	assert.deepEqual(saveBarText(1, true), { text: '1 unsaved change', danger: false });
+	assert.deepEqual(saveBarText(3, true), { text: '3 unsaved changes', danger: false });
+	assert.deepEqual(saveBarText(3, false), { text: 'Fix the cache lifetime to save', danger: true });
+});

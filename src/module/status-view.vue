@@ -8,15 +8,6 @@
 			<module-navigation />
 		</template>
 
-		<template #actions>
-			<v-button v-tooltip.bottom="'Reset to configured values'" rounded icon small secondary :disabled="!state?.stored || busy" @click="reset">
-				<v-icon name="settings_backup_restore" small />
-			</v-button>
-			<v-button v-tooltip.bottom="'Save & apply'" rounded icon small :loading="saving" :disabled="!canSave || busy" @click="save">
-				<v-icon name="check" small />
-			</v-button>
-		</template>
-
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="About" :close="false">
 				<p class="sidebar-text">
@@ -132,6 +123,9 @@
 					<template v-if="state.stored?.updatedAt">Saved here on {{ new Date(state.stored.updatedAt).toLocaleString() }}.</template>
 					<template v-else>Nothing saved here. The configured values are in use.</template>
 				</p>
+				<div v-if="state.stored" class="reset-row">
+					<v-button secondary :disabled="busy" @click="reset">Reset to Configured Values</v-button>
+				</div>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="cached" /></template>
@@ -147,6 +141,8 @@
 					</v-checkbox>
 				</div>
 			</template>
+
+			<save-bar />
 		</div>
 	</private-view>
 </template>
@@ -155,13 +151,14 @@
 import { onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import PendingChanges from './pending-changes.vue';
+import SaveBar from './save-bar.vue';
 import SettingCard from './setting-card.vue';
 import { TTL_ERROR } from '../shared/duration';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
 const pageClass = usePageClass();
-const { state, draft, busy, dirty, canSave, ttlValid, saving, loadingState, error, message, loadState, save, reset } = useCacheManager();
+const { state, draft, busy, ttlValid, loadingState, error, message, loadState, reset } = useCacheManager();
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
 
 function onOff(value: boolean) {
@@ -202,6 +199,9 @@ onMounted(() => loadState(true));
 .subdued,
 .meta {
 	color: var(--theme--foreground-subdued);
+}
+.reset-row {
+	margin-top: 12px;
 }
 .meta {
 	margin-top: 12px;

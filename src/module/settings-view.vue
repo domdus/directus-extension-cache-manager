@@ -59,7 +59,7 @@
 			</v-divider>
 			<p class="explain">
 				Back up what you saved in Cache Manager as a JSON file, or restore it, for example in another project. An import
-				is checked like Save &amp; apply and is used right away. Unsaved changes on the other pages are replaced.
+				is checked like Save &amp; Apply and is used right away. Unsaved changes on the other pages are replaced.
 			</p>
 
 			<div class="actions">

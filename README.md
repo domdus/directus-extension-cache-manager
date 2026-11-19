@@ -46,16 +46,16 @@ npm run build
 
 1. Open **Cache Manager → Cache Clearing** and pick a time period (last hour to last 7 days).
 2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared in 296 minutes of the last 24 hours." Lower is better. If collections are already ignored, the tile also shows how often it would be cleared without them, for example "Without the ignored collections: 49 times per hour".
-3. Select collections in the table and click **Ignore selected** (or **Stop ignoring selected**), pick one with **Ignore another collection…**, or click **Ignore suggestion** in the **Suggestion** tile. The **Status** column shows what Save & apply will change ("Will be ignored", "Will clear cache"). The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
+3. Select collections in the table and click **Ignore selected** (or **Stop ignoring selected**), pick one with **Ignore another collection…**, or click **Ignore suggestion** in the **Suggestion** tile. The **Status** column shows what Save & Apply will change ("Will be ignored", "Will clear cache"). The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
 4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share your unsaved changes. A notice lists what is not saved yet.
-5. Click **Save & apply** (top right, on either page). It is used right away.
+5. Click **Save & Apply** at the bottom of either page. It is used right away. **Discard Changes** next to it drops what you have not saved yet. The bar also shows how many changes are not saved.
 
-**Reset** on the Status page removes what you saved here and uses the configured values again.
+**Reset to Configured Values** on the Status page removes what you saved here and uses the configured values again.
 
 ### Settings page
 
 - **Extension Updates**: checks npm for a newer version.
-- **Export / Import**: downloads what you saved as a JSON file, or loads such a file. An import is checked like Save & apply (for example, every collection must exist in this project) and is used right away.
+- **Export / Import**: downloads what you saved as a JSON file, or loads such a file. An import is checked like Save & Apply (for example, every collection must exist in this project) and is used right away.
 - **Remove extension data**: uses the configured values again and deletes the `cache_manager` field. Use it before uninstalling.
 
 ## The settings

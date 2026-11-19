@@ -1,4 +1,4 @@
-/** What the Status column shows: the state in use now, or what Save & apply will change. */
+/** What the Status column shows: the state in use now, or what Save & Apply will change. */
 export type RowState = 'ignored' | 'clears' | 'unmeasured' | 'will-ignore' | 'will-clear';
 
 export function rowState(collection: string, measured: boolean, draftIgnored: Set<string>, effectiveIgnored: Set<string>): RowState {
