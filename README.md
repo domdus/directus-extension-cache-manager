@@ -45,7 +45,7 @@ npm run build
 ## Configure
 
 1. Open **Cache Manager → Cache Clearing** and pick a time period (last hour to last 7 days).
-2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared in 296 minutes of the last 24 hours." Lower is better. If collections are already ignored, the tile also shows how often it would be cleared without them, for example "49 without the ignored collections".
+2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared in 296 minutes of the last 24 hours." Lower is better. If collections are already ignored, the tile also shows how often it would be cleared without them, for example "Without the ignored collections: 49 times per hour".
 3. Tick collections in the **Ignore** column, or click **Ignore suggestion** in the **Suggestion** tile. The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
 4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share your unsaved changes. A notice lists what is not saved yet.
 5. Click **Save & apply** (top right, on either page). It is used right away.

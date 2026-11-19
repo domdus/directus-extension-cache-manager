@@ -76,7 +76,7 @@
 							<span class="unit">times per hour</span>
 						</div>
 						<span v-if="state?.effective.ignoreList.length" class="unit">
-							{{ formatTimesPerHour(analysis.anyWriteMinutes, analysis.windowMinutes) }} without the ignored collections
+							Without the ignored collections: {{ formatTimesPerHour(analysis.anyWriteMinutes, analysis.windowMinutes) }} times per hour
 						</span>
 						<span class="explain">
 							The cache was cleared in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}.
