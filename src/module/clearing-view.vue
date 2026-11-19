@@ -162,7 +162,10 @@
 							<td class="num">{{ formatNumber(row.writes) }}</td>
 							<td class="num">{{ formatMinutesShort(row.minutes, analysis.windowMinutes) }}</td>
 							<td class="num">{{ row.ignored ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
-							<td>{{ row.ignored ? 'Ignored' : 'Clears cache' }}</td>
+							<td>
+								<span v-if="row.ignored" class="state state--ignored">Ignored</span>
+								<span v-else class="state" :class="{ 'state--clears': row.savedMinutes * 60 >= analysis.windowMinutes }">Clears cache</span>
+							</td>
 							<td>
 								<span v-if="row.recommended" class="badge">Suggested</span>
 								<span v-else-if="!row.ignored" class="subdued">{{ row.reason }}</span>
@@ -402,6 +405,28 @@ th {
 .num {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
+}
+.state {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--theme--foreground-subdued);
+	white-space: nowrap;
+}
+.state::before {
+	content: '';
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: currentColor;
+}
+/* Ignored: changes never clear the cache. */
+.state--ignored {
+	color: var(--theme--success);
+}
+/* Clears the cache at least once per hour on average. */
+.state--clears {
+	color: var(--theme--warning);
 }
 .badge {
 	display: inline-block;
