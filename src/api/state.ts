@@ -1,4 +1,5 @@
 import { LOG_PREFIX, SETTINGS_FIELD } from '../shared/constants';
+import { DEFAULT_RULES, isDefaultRule, parseRules, type RulesConfig } from '../shared/rules';
 import { applyToEnv, completeBaseline, mergeValues, parseStored, readValues, type CacheValues, type StoredOverride } from '../shared/settings';
 
 type Env = Record<string, unknown>;
@@ -79,18 +80,55 @@ export async function ensureSettingsField(ctx: ApiContext): Promise<boolean> {
 	return true;
 }
 
-export async function readStored(database: Knex): Promise<StoredOverride | null> {
+/** The stored JSON (override values plus `rules`), parsed; null when empty or unreadable. */
+async function readRaw(database: Knex): Promise<Record<string, unknown> | null> {
 	if (!(await hasSettingsField(database))) return null;
 	const row = await database.select(SETTINGS_FIELD).from('directus_settings').first();
-	return parseStored(row?.[SETTINGS_FIELD]);
+	let value = row?.[SETTINGS_FIELD];
+	if (typeof value === 'string') {
+		try {
+			value = JSON.parse(value);
+		} catch {
+			return null;
+		}
+	}
+	return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-/** Persists the override through SettingsService (activity and revision are logged for the admin). */
-export async function writeStored(ctx: ApiContext, accountability: unknown, value: StoredOverride | null) {
+export async function readStored(database: Knex): Promise<StoredOverride | null> {
+	return parseStored(await readRaw(database));
+}
+
+export async function readRules(database: Knex): Promise<RulesConfig> {
+	return parseRules((await readRaw(database))?.rules);
+}
+
+function hasRules(rules: RulesConfig | null | undefined): rules is RulesConfig {
+	return !!rules && (rules.targeted || Object.values(rules.collections).some((rule) => !isDefaultRule(rule)));
+}
+
+async function writeRaw(ctx: ApiContext, accountability: unknown, value: Record<string, unknown> | null) {
 	const { SettingsService } = ctx.services;
 	const settings = new SettingsService({ knex: ctx.database, schema: await ctx.getSchema(), accountability });
 	await settings.upsertSingleton({ [SETTINGS_FIELD]: value });
 }
+
+/** Persists the override through SettingsService (activity and revision are logged for the admin). Keeps the rules. */
+export async function writeStored(ctx: ApiContext, accountability: unknown, value: StoredOverride | null) {
+	const rules = parseRules((await readRaw(ctx.database))?.rules);
+	const next = { ...(value ?? {}), ...(hasRules(rules) ? { rules } : {}) };
+	await writeRaw(ctx, accountability, Object.keys(next).length ? next : null);
+}
+
+/** Persists the clearing rules. Keeps the override values. */
+export async function writeRules(ctx: ApiContext, accountability: unknown, rules: RulesConfig) {
+	const raw = (await readRaw(ctx.database)) ?? {};
+	const { rules: _old, ...override } = raw;
+	const next = { ...override, ...(hasRules(rules) ? { rules } : {}) };
+	await writeRaw(ctx, accountability, Object.keys(next).length ? next : null);
+}
+
+export { DEFAULT_RULES };
 
 /** Merges baseline and override and writes the result into env. Returns the effective values. */
 /** Drops the settings field. The hook creates it again (empty) at the next start while the extension is installed. */

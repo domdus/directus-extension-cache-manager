@@ -98,7 +98,7 @@
 						:configured="state.baseline.ignoreList"
 						:override="state.stored?.ignoreList ?? null"
 					>
-						<v-button small secondary to="/cache-manager/clearing">Choose ignored collections</v-button>
+						<v-button small secondary to="/cache-manager/optimize">Choose ignored collections</v-button>
 					</setting-card>
 					<setting-card
 						title="How long answers stay in the cache"

@@ -1,5 +1,5 @@
 <template>
-	<private-view title="Cache Clearing" icon="list_alt">
+	<private-view title="Optimize" icon="speed">
 		<template #headline>
 			<v-breadcrumb :items="[{ name: 'Cache Manager', to: '/cache-manager' }]" />
 		</template>
@@ -77,6 +77,10 @@
 
 			<template v-if="analysis">
 				<v-notice v-if="retentionNotice" type="warning" class="notice">{{ retentionNotice }}</v-notice>
+				<v-notice v-if="rulesData?.status.targetedActive" type="info" class="notice">
+					"Only what changed" is on (Clearing Rules). The numbers below count how often a change asks Directus to clear.
+					Each one now clears only the answers that use the changed collection, so ignoring collections matters much less.
+				</v-notice>
 
 				<div class="tiles">
 					<div class="tile">
@@ -85,12 +89,9 @@
 							<span class="value">{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
 							<span class="unit">times per hour</span>
 						</div>
-						<span v-if="state?.effective.ignoreList.length" class="unit">
-							Without the ignored collections: {{ formatTimesPerHour(analysis.anyWriteMinutes, analysis.windowMinutes) }} times per hour
-						</span>
 						<span v-if="notMeasuredLine" class="unit">{{ notMeasuredLine }}</span>
 						<span class="explain">
-							The cache was cleared in {{ formatMinutes(analysis.purgeMinutes, analysis.windowMinutes) }}.
+							The cache was cleared {{ formatTimes(analysis.purgeMinutes, analysis.windowMinutes) }}.
 							Lower is better: after clearing, Directus has to load everything from the database again.
 						</span>
 					</div>
@@ -104,7 +105,7 @@
 								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
 							</div>
 							<span class="explain">
-								The cache would have been cleared in {{ formatMinutes(whatIf, analysis.windowMinutes) }}. Lower is better.
+								The cache would have been cleared {{ formatTimes(whatIf, analysis.windowMinutes) }}. Lower is better.
 							</span>
 						</template>
 						<span v-else class="explain">No changes yet. Select collections in the table and click Ignore selected to see the effect here.</span>
@@ -122,15 +123,22 @@
 								{{ analysis.recommendedList.join(', ') }}.
 							</span>
 							<span class="explain">
-								The cache would have been cleared in
-								{{ formatMinutes(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}. Lower is better.
+								The cache would have been cleared
+								{{ formatTimes(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}. Lower is better.
 							</span>
 							<div>
 								<v-button small :secondary="!addableRecommendations.length" :disabled="!addableRecommendations.length" @click="add(addableRecommendations)">
 									{{ addableRecommendations.length ? 'Ignore suggestion' : 'Added to your changes' }}
 								</v-button>
 							</div>
-							<span class="explain">Only do this if no app needs these entries to be up to date right away.</span>
+							<span v-if="sensitiveRecommendations.length" class="explain warning-text">
+								Check {{ sensitiveRecommendations.join(', ') }} first: the name suggests apps decide on it (access, payments,
+								purchases). Only ignore it after those apps read it with <code>Cache-Control: no-store</code>.
+							</span>
+							<span class="explain">
+								Only do this if no app needs these entries to be up to date right away. Ignored collections can be up to
+								{{ state?.effective.ttl || 'the cache lifetime' }} old.
+							</span>
 						</template>
 						<span v-else class="explain">No suggestion. No collection changes often enough to matter.</span>
 					</div>
@@ -213,7 +221,14 @@
 								>
 									Turn on tracking
 								</v-button>
-								<span v-else-if="row.recommended" class="badge">Suggested</span>
+								<span
+									v-else-if="row.recommended"
+									v-tooltip="suggestionTooltip(row.collection, state?.effective.ttl ?? '')"
+									class="badge"
+									:class="{ 'badge--warning': looksSensitive(row.collection) }"
+								>
+									{{ looksSensitive(row.collection) ? 'Check apps first' : 'Suggested' }}
+								</span>
 								<span v-else-if="!row.ignored" class="subdued">{{ row.reason }}</span>
 							</td>
 						</tr>
@@ -240,10 +255,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { buildRows, retentionWarning, unmeasuredLine, type TableRow } from '../shared/coverage';
-import { ROW_STATE_LABELS, rowState, selectionChanges, type RowState } from '../shared/selection';
+import { ROW_STATE_LABELS, looksSensitive, rowState, selectionChanges, suggestionTooltip, type RowState } from '../shared/selection';
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
+import { useRules } from './composables/use-rules';
 import {
-	formatMinutes,
+	formatTimes,
 	formatMinutesShort,
 	formatNumber,
 	formatPeriod,
@@ -283,6 +299,7 @@ const selected = ref<string[]>([]);
 const allSelected = computed(() => rows.value.length > 0 && selected.value.length === rows.value.length);
 const someSelected = computed(() => selected.value.length > 0 && !allSelected.value);
 const changes = computed(() => selectionChanges(selected.value, draft.ignoreList));
+const sensitiveRecommendations = computed(() => (analysis.value?.recommendedList ?? []).filter(looksSensitive));
 const effectiveSet = computed(() => new Set(state.value?.effective.ignoreList ?? []));
 
 function toggleSelectAll(checked: boolean) {
@@ -345,7 +362,10 @@ function addOther(name: string | null) {
 
 watch(hours, loadAnalysis);
 
+const { data: rulesData, load: loadRules } = useRules();
+
 onMounted(async () => {
+	loadRules();
 	await loadState();
 	await loadAnalysis();
 });
@@ -512,7 +532,7 @@ th {
 	border-radius: 50%;
 	background: currentColor;
 }
-/* Ignored: changes never clear the cache. */
+/* Keeps cache (ignored): changes never clear the cache. */
 .state--ignored {
 	color: var(--theme--success);
 }
@@ -540,6 +560,9 @@ th {
 	flex-wrap: wrap;
 	gap: 8px;
 }
+.warning-text {
+	color: var(--theme--warning);
+}
 .badge {
 	display: inline-block;
 	padding: 2px 8px;
@@ -548,6 +571,9 @@ th {
 	background: var(--theme--primary);
 	color: var(--theme--foreground-inverted, #fff);
 	font-size: 12px;
+}
+.badge--warning {
+	background: var(--theme--warning);
 }
 code {
 	font-family: var(--theme--fonts--monospace--font-family, monospace);

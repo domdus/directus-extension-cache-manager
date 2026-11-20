@@ -8,10 +8,22 @@
 		<div class="in-effect">
 			<span class="caption">In use now</span>
 			<div v-if="Array.isArray(effective)" class="chips">
-				<v-chip v-for="name in effective" :key="name" small>{{ name }}</v-chip>
+				<v-chip
+					v-for="name in effective"
+					:key="name"
+					v-tooltip="isAddedHere(name) ? addedTooltip(name) : undefined"
+					small
+					:class="{ 'added-here': isAddedHere(name) }"
+				>
+					{{ name }}
+				</v-chip>
 				<span v-if="!effective.length" class="value">None</span>
 			</div>
 			<span v-else class="value">{{ effective }}</span>
+			<span v-if="addedCount" class="legend">
+				<span class="legend-dot" />
+				{{ addedCount === 1 ? '1 entry is' : `${addedCount} entries are` }} only saved here, not in the configuration.
+			</span>
 		</div>
 
 		<div v-if="$slots.edit" class="edit">
@@ -37,7 +49,9 @@
 <script setup lang="ts">
 type Value = string | string[];
 
-withDefaults(
+import { computed } from 'vue';
+
+const props = withDefaults(
 	defineProps<{
 		title: string;
 		env: string;
@@ -48,6 +62,18 @@ withDefaults(
 	}>(),
 	{ configured: null, override: null, readonly: false },
 );
+
+const configuredSet = computed(() => new Set(Array.isArray(props.configured) ? props.configured : []));
+
+function isAddedHere(name: string): boolean {
+	return !props.readonly && Array.isArray(props.configured) && !configuredSet.value.has(name);
+}
+
+const addedCount = computed(() => (Array.isArray(props.effective) ? props.effective.filter(isAddedHere).length : 0));
+
+function addedTooltip(name: string): string {
+	return `Added here, not in the configuration. To keep it long term, add "${name}" to ${props.env} in your Directus configuration.`;
+}
 
 function text(value: Value | null | undefined): string {
 	if (Array.isArray(value)) return value.length ? value.join(', ') : 'none';
@@ -99,6 +125,27 @@ function text(value: Value | null | undefined): string {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
+}
+.chips .added-here {
+	--v-chip-color: var(--theme--primary);
+	--v-chip-background-color: var(--theme--primary-background);
+	--v-chip-color-hover: var(--theme--primary);
+	--v-chip-background-color-hover: var(--theme--primary-subdued);
+	cursor: help;
+}
+.legend {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--theme--foreground-subdued);
+}
+.legend-dot {
+	flex: none;
+	inline-size: 8px;
+	block-size: 8px;
+	border-radius: 50%;
+	background: var(--theme--primary);
 }
 .lines {
 	display: flex;

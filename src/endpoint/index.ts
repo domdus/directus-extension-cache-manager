@@ -11,11 +11,15 @@ import {
 	deleteSettingsField,
 	ensureSettingsField,
 	getBaseline,
+	readRules,
 	readStored,
 	startupApplied,
+	writeRules,
 	writeStored,
 	type ApiContext,
 } from '../api/state';
+import { applyRules, runtimeStatus } from '../api/targeted';
+import { DEFAULT_RULES, describeRules, isTargetable, validateRules } from '../shared/rules';
 
 class HttpError extends Error {
 	constructor(
@@ -179,11 +183,51 @@ export default defineEndpoint({
 			}),
 		);
 
+		/** Fields of each collection (for "skip changes that only touch …"), alias fields included. */
+		function fieldsByCollection(schema: any): Record<string, string[]> {
+			return Object.fromEntries(
+				Object.entries(schema.collections ?? {}).map(([name, info]: [string, any]) => [name, Object.keys(info?.fields ?? {}).sort()]),
+			);
+		}
+
+		async function rules() {
+			const schema = await ctx.getSchema();
+			const fields = fieldsByCollection(schema);
+			const effective = readValues(env);
+			return {
+				config: await readRules(database),
+				status: runtimeStatus(),
+				globalTtl: effective.ttl,
+				ignoreList: effective.ignoreList,
+				collections: Object.keys(fields)
+					.sort()
+					.map((name) => ({ name, fields: fields[name], system: name.startsWith('directus_'), targetable: isTargetable(name) })),
+			};
+		}
+
+		router.get('/rules', wrap(rules));
+
+		router.post(
+			'/rules',
+			wrap(async (req) => {
+				const schema = await ctx.getSchema();
+				const result = validateRules(req.body, fieldsByCollection(schema));
+				if (!result.ok) throw new HttpError(400, result.errors.join('; '), 'INVALID_PAYLOAD');
+				const accountability = (req as any).accountability;
+				await ensureSettingsField(ctx);
+				await writeRules(ctx, accountability, result.value);
+				await applyRules(result.value, 'save');
+				logger.info(`${LOG_PREFIX} clearing rules saved by ${accountability.user}: ${describeRules(result.value)}`);
+				return rules();
+			}),
+		);
+
 		router.post(
 			'/cleanup',
 			wrap(async (req) => {
 				const accountability = (req as any).accountability;
 				const effective = applyEffective(env, null);
+				await applyRules(DEFAULT_RULES, 'save');
 				const deletedField = await deleteSettingsField(ctx, accountability);
 				logger.info(`${LOG_PREFIX} extension data removed by ${accountability.user}: ${describe(effective)}`);
 				return { deletedField, state: await state() };

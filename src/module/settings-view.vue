@@ -107,9 +107,9 @@ import { computed, onMounted, ref } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
-import { SETTINGS_FIELD } from '../shared/constants';
+import { EXTENSION_ID, SETTINGS_FIELD } from '../shared/constants';
 import { EXTENSION_GITHUB_URL, EXTENSION_MARKETPLACE_UID, EXTENSION_NPM_URL, EXTENSION_PACKAGE_NAME } from '../shared/extension-meta';
-import { buildExport, parseImport } from '../shared/transfer';
+import { buildExport, parseImport, parseImportRules } from '../shared/transfer';
 
 const api = useApi();
 const pageClass = usePageClass();
@@ -240,8 +240,14 @@ async function checkUpdates() {
 	}
 }
 
-function exportSettings() {
-	const file = buildExport(state.value?.stored ?? null);
+async function exportSettings() {
+	let rules = null;
+	try {
+		rules = (await api.get(`/${EXTENSION_ID}/rules`)).data?.config ?? null;
+	} catch {
+		// Server part older than the app part: export without rules.
+	}
+	const file = buildExport(state.value?.stored ?? null, new Date(), rules);
 	const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
 	const url = URL.createObjectURL(blob);
 	const anchor = document.createElement('a');
@@ -264,8 +270,17 @@ async function onImportFile(event: Event) {
 
 	importing.value = true;
 	try {
-		const body = parseImport(await file.text());
+		const text = await file.text();
+		const body = parseImport(text);
+		const rules = parseImportRules(text);
 		await importSettings(body);
+		if (rules !== undefined) {
+			try {
+				await api.post(`/${EXTENSION_ID}/rules`, rules);
+			} catch (error: any) {
+				throw new Error(`the settings were imported, but not the clearing rules: ${error?.response?.data?.errors?.[0]?.message ?? error?.message}`);
+			}
+		}
 		importMessage.value = {
 			type: 'success',
 			text: Object.keys(body).length

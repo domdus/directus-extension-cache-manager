@@ -1,5 +1,6 @@
 import { EXTENSION_PACKAGE_NAME } from './extension-meta';
 import type { OverrideInput, StoredOverride } from './settings';
+import type { RulesConfig } from './rules';
 
 export const EXPORT_FORMAT = 1;
 
@@ -10,11 +11,15 @@ export type ExportFile = {
 	/** The saved values; null = nothing saved, the configured values are in use. */
 	settings: OverrideInput | null;
 	updatedAt: string | null;
+	/** Clearing rules (Clearing Rules page). Missing in files from older versions. */
+	rules?: RulesConfig;
 };
 
 /** The file "Export JSON" downloads. Only the saved values, never the configured ones. */
-export function buildExport(stored: StoredOverride | null, now = new Date()): ExportFile {
+export function buildExport(stored: StoredOverride | null, now = new Date(), rules?: RulesConfig | null): ExportFile {
+	const withRules = rules && (rules.targeted || Object.keys(rules.collections).length) ? { rules } : {};
 	return {
+		...withRules,
 		extension: EXTENSION_PACKAGE_NAME,
 		format: EXPORT_FORMAT,
 		exportedAt: now.toISOString(),
@@ -47,11 +52,21 @@ export function parseImport(text: string): Record<string, unknown> {
 			throw new ImportError('This file was exported by a newer version of Cache Manager. Update the extension first.');
 		}
 		const settings = obj.settings;
-		if (settings === null) return {};
+		if (settings === null || (settings === undefined && 'rules' in obj)) return {};
 		if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new ImportError('This file does not contain Cache Manager settings.');
 		return pick(settings as Record<string, unknown>);
 	}
 	return pick(obj);
+}
+
+/** The clearing rules of an exported file, for POST /rules (which checks them). undefined = the file has none. */
+export function parseImportRules(text: string): unknown {
+	try {
+		const data = JSON.parse(text);
+		return data && typeof data === 'object' && !Array.isArray(data) && 'rules' in data ? data.rules : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 const KEYS = ['autoPurge', 'skipAllowed', 'ignoreList', 'ttl'];

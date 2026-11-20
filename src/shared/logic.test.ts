@@ -191,13 +191,13 @@ test('readValues / applyToEnv round trip on an env object', () => {
 });
 
 test('format helpers produce plain tile texts', async () => {
-	const { formatMinutes, formatMinuteCount, formatPeriod, formatPercent, formatShare, formatWindow, formatSaved } = await import('./format');
-	assert.equal(formatMinutes(296, 1440), '296 minutes of the last 24 hours');
-	assert.equal(formatMinutes(1, 4320), '1 minute of the last 3 days');
+	const { formatTimes, formatMinuteCount, formatPeriod, formatPercent, formatShare, formatWindow, formatSaved } = await import('./format');
+	assert.equal(formatTimes(296, 1440), '296 times in the last 24 hours');
+	assert.equal(formatTimes(1, 4320), '1 time in the last 3 days');
 	assert.equal(formatMinuteCount(1288), '1,288 minutes');
 	assert.equal(formatPeriod(1), 'the last hour');
 	assert.equal(formatPeriod(168), 'the last 7 days');
-	assert.equal(formatMinutes(0, 60), '0 minutes of the last hour');
+	assert.equal(formatTimes(0, 60), '0 times in the last hour');
 	assert.equal(formatPercent(0.05), '5 %');
 	assert.equal(formatShare(306 / 1440), '21 %');
 	assert.equal(formatShare(22 / 1440), '1.5 %');
@@ -428,7 +428,7 @@ test('rowState shows the state in use and what Save & apply will change', async 
 	assert.equal(rowState('pages', true, draft, effective), 'clears');
 	assert.equal(rowState('audit', false, draft, effective), 'unmeasured');
 	assert.equal(rowState('old', false, draft, effective), 'will-clear');
-	assert.equal(ROW_STATE_LABELS['will-ignore'], 'Will be ignored');
+	assert.equal(ROW_STATE_LABELS['will-ignore'], 'Will keep cache');
 	assert.equal(ROW_STATE_LABELS['will-clear'], 'Will clear cache');
 });
 
@@ -450,4 +450,26 @@ test('pendingChanges lists each unsaved change; saveBarText counts them', async 
 	assert.deepEqual(saveBarText(1, true), { text: '1 unsaved change', danger: false });
 	assert.deepEqual(saveBarText(3, true), { text: '3 unsaved changes', danger: false });
 	assert.deepEqual(saveBarText(3, false), { text: 'Fix the cache lifetime to save', danger: true });
+});
+
+test('sensitive collection names get a warning on suggestions', async () => {
+	const { looksSensitive, suggestionTooltip } = await import('./selection');
+	for (const name of ['subscriptions', 'checkout_sessions', 'payments', 'order_history', 'transactions', 'user_licenses']) {
+		assert.equal(looksSensitive(name), true, name);
+	}
+	for (const name of ['visits', 'com_videos', 'com_views', 'searches', 'errors']) {
+		assert.equal(looksSensitive(name), false, name);
+	}
+	assert.match(suggestionTooltip('subscriptions', '12h'), /Cache-Control: no-store.*up to 12h old/);
+	assert.match(suggestionTooltip('visits', ''), /until the cache expires/);
+});
+
+test('export and import carry the clearing rules', async () => {
+	const { buildExport, parseImport, parseImportRules } = await import('./transfer');
+	const rules = { targeted: true, collections: { com_videos: { create: true, update: true, delete: true, skipFields: ['views_count'], ttl: '5m' } } };
+	const text = JSON.stringify(buildExport(null, new Date(), rules));
+	assert.deepEqual(parseImportRules(text), rules);
+	assert.deepEqual(parseImport(text), {});
+	assert.equal(parseImportRules(JSON.stringify(buildExport(null, new Date(), { targeted: false, collections: {} }))), undefined);
+	assert.equal(parseImportRules('{"ignoreList":["a"]}'), undefined);
 });

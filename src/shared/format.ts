@@ -36,10 +36,10 @@ export function formatPeriod(hours: number): string {
 	return hours === 1 ? 'the last hour' : `the last ${formatWindow(hours)}`;
 }
 
-/** "296 minutes of the last 24 hours". */
-export function formatMinutes(minutes: number, windowMinutes: number): string {
+/** "296 times in the last 24 hours" (minutes with a clear; several clears in one minute count once). */
+export function formatTimes(minutes: number, windowMinutes: number): string {
 	const count = Math.round(minutes || 0);
-	return `${formatNumber(count)} ${count === 1 ? 'minute' : 'minutes'} of ${formatPeriod(windowMinutes / 60)}`;
+	return `${formatNumber(count)} ${count === 1 ? 'time' : 'times'} in ${formatPeriod(windowMinutes / 60)}`;
 }
 
 /** "296 minutes". */

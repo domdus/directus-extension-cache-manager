@@ -7,10 +7,17 @@
 			</v-list-item-content>
 		</v-list-item>
 
-		<v-list-item to="/cache-manager/clearing">
-			<v-list-item-icon><v-icon name="list_alt" /></v-list-item-icon>
+		<v-list-item to="/cache-manager/optimize">
+			<v-list-item-icon><v-icon name="speed" /></v-list-item-icon>
 			<v-list-item-content>
-				<v-text-overflow text="Cache Clearing" />
+				<v-text-overflow text="Optimize" />
+			</v-list-item-content>
+		</v-list-item>
+
+		<v-list-item to="/cache-manager/rules">
+			<v-list-item-icon><v-icon name="rule" /></v-list-item-icon>
+			<v-list-item-content>
+				<v-text-overflow text="Clearing Rules" />
 			</v-list-item-content>
 		</v-list-item>
 
