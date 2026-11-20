@@ -147,7 +147,7 @@
 							</span>
 							<div>
 								<v-button small :secondary="!addableRecommendations.length" :disabled="!addableRecommendations.length" @click="add(addableRecommendations)">
-									{{ addableRecommendations.length ? 'Ignore suggestion' : 'Added to your changes' }}
+									{{ addableRecommendations.length ? 'Apply suggested' : 'Added to your changes' }}
 								</v-button>
 							</div>
 							<span v-if="sensitiveRecommendations.length" class="explain warning-text">

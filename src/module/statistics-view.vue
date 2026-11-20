@@ -21,6 +21,11 @@
 					what was cleared. The page refreshes every 15 seconds.
 				</p>
 				<p class="sidebar-text">
+					<strong>Cache Size</strong> counts the memory store directly. Directus keeps an expired answer until someone
+					asks for it again, so answers nobody asks for again would stay in memory. The extension deletes them every
+					minute. With Redis, Redis removes them itself.
+				</p>
+				<p class="sidebar-text">
 					The numbers live in memory. They start at zero when Directus restarts and are counted per process.
 				</p>
 				<p class="sidebar-text">
@@ -67,6 +72,55 @@
 				</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
+					<template #icon><v-icon name="memory" /></template>
+					Cache Size
+				</v-divider>
+				<template v-if="data.status.size">
+					<p class="explain intro">How much the cache holds in the memory of this Directus process right now.</p>
+					<div class="tiles">
+						<div class="tile">
+							<span class="label">Size</span>
+							<span class="value">{{ formatBytes(data.status.size.bytes) }}</span>
+							<span class="explain">{{ formatNumber(data.status.size.entries) }} {{ data.status.size.entries === 1 ? 'entry' : 'entries' }}. About the size of the stored data; Node.js needs some more memory around it.</span>
+						</div>
+						<div class="tile">
+							<span class="label">Expired</span>
+							<span class="value">{{ formatBytes(data.status.size.expiredBytes) }}</span>
+							<span class="explain">{{ formatNumber(data.status.size.expired) }} expired {{ data.status.size.expired === 1 ? 'entry' : 'entries' }} waiting. The extension deletes them every minute.</span>
+						</div>
+						<div class="tile">
+							<span class="label">Freed</span>
+							<span class="value">{{ formatBytes(data.status.swept.bytes) }}</span>
+							<span class="explain">{{ formatNumber(data.status.swept.entries) }} expired {{ data.status.swept.entries === 1 ? 'entry' : 'entries' }} deleted since Directus started. Directus itself only deletes an expired entry when someone asks for it again.</span>
+						</div>
+					</div>
+					<div v-if="largest.length" class="largest">
+						<span class="label">Largest Collections</span>
+						<p class="explain">Answers that use several collections count for each of them.</p>
+						<div v-for="row in largest" :key="row.name" class="largest-row">
+							<span class="largest-name">{{ row.name }}</span>
+							<span class="largest-bar"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
+							<span class="largest-value">{{ formatBytes(row.bytes) }}</span>
+						</div>
+					</div>
+					<p v-else-if="!data.status.targetedActive" class="meta">The size per collection is measured in Granular mode.</p>
+				</template>
+				<p v-else class="explain intro">
+					The size can only be measured when the cache is on and kept in memory (CACHE_STORE=memory). This Directus uses
+					{{ data.status.store }}.
+				</p>
+
+				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
+					<template #icon><v-icon name="bar_chart" /></template>
+					Last 24 Hours
+				</v-divider>
+				<p class="explain intro">Per hour, since Directus started. Hover a bar for the numbers.</p>
+				<div class="charts">
+					<hour-bars title="Changes" :columns="clearColumns" :legend="clearLegend" :format="(v) => formatNumber(v)" empty-text="No changes yet." />
+					<hour-bars v-if="data.status.size" title="Cache Size" :columns="sizeColumns" :legend="sizeLegend" :format="formatBytes" empty-text="The cache is empty." />
+				</div>
+
+				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="list" /></template>
 					Recent Events
 				</v-divider>
@@ -102,9 +156,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
+import HourBars, { type BarColumn } from './hour-bars.vue';
 import { useRules, type RulesStatus } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
-import { formatNumber } from '../shared/format';
+import { formatBytes, formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
 const { data, loading, error, load } = useRules();
@@ -117,6 +172,61 @@ const topCollections = computed(() =>
 		.slice(0, 5)
 		.map(([name, count]) => `${name} (${formatNumber(count)})`),
 );
+
+const COLORS = {
+	full: 'var(--theme--warning, var(--warning))',
+	targeted: 'var(--theme--success, var(--success))',
+	skipped: 'var(--theme--foreground-subdued, var(--foreground-subdued))',
+	size: 'var(--theme--primary, var(--primary))',
+};
+const clearLegend = [
+	{ label: 'Whole cache', color: COLORS.full },
+	{ label: 'Granular', color: COLORS.targeted },
+	{ label: 'Kept by rule', color: COLORS.skipped },
+];
+const sizeLegend = [{ label: 'Largest size in the hour', color: COLORS.size }];
+
+function hourLabel(iso: string): string {
+	return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function hourRange(iso: string): string {
+	const start = new Date(iso);
+	const end = new Date(start.getTime() + 3_600_000);
+	const time = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	return `${time(start)}–${time(end)}`;
+}
+
+const clearColumns = computed<BarColumn[]>(() =>
+	(data.value?.status.history ?? []).map((h) => ({
+		label: hourLabel(h.hour),
+		tooltip: `${hourRange(h.hour)}: whole cache ${formatNumber(h.full)}, granular ${formatNumber(h.targeted)}, kept by rule ${formatNumber(h.skipped)}`,
+		segments: [
+			{ value: h.full, color: COLORS.full },
+			{ value: h.targeted, color: COLORS.targeted },
+			{ value: h.skipped, color: COLORS.skipped },
+		],
+	})),
+);
+
+const sizeColumns = computed<BarColumn[]>(() =>
+	(data.value?.status.history ?? []).map((h) => ({
+		label: hourLabel(h.hour),
+		tooltip:
+			h.bytes === null
+				? `${hourRange(h.hour)}: not measured`
+				: `${hourRange(h.hour)}: up to ${formatBytes(h.bytes)} (${formatNumber(h.entries ?? 0)} entries)`,
+		segments: [{ value: h.bytes ?? 0, color: COLORS.size }],
+	})),
+);
+
+const largest = computed(() => {
+	const rows = Object.entries(data.value?.status.bytesByCollection ?? {})
+		.filter(([name]) => name !== '*')
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 8);
+	const top = rows[0]?.[1] || 1;
+	return rows.map(([name, bytes]) => ({ name, bytes, share: bytes / top }));
+});
 
 function times(count: number): string {
 	return `${formatNumber(count)} ${count === 1 ? 'time' : 'times'}`;
@@ -254,5 +364,54 @@ th {
 }
 .result--skipped {
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.charts {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+}
+@media (max-width: 1100px) {
+	.charts {
+		grid-template-columns: 1fr;
+	}
+}
+.largest {
+	margin-top: 16px;
+	padding: 16px 18px;
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+}
+.largest .label {
+	font-size: 15px;
+	font-weight: 600;
+}
+.largest .explain {
+	margin: 4px 0 12px;
+}
+.largest-row {
+	display: grid;
+	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 6rem;
+	align-items: center;
+	gap: 12px;
+	padding: 4px 0;
+}
+.largest-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.largest-bar {
+	block-size: 8px;
+}
+.largest-bar span {
+	display: block;
+	block-size: 100%;
+	min-inline-size: 2px;
+	border-radius: 0 4px 4px 0;
+	background: var(--theme--primary, var(--primary));
+}
+.largest-value {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
 }
 </style>

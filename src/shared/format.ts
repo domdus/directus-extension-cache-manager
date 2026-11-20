@@ -96,3 +96,17 @@ export function formatMinutesShort(minutes: number, windowMinutes: number): stri
 	const per = rate === null ? '<1/h' : `~${formatNumber(rate)}/h`;
 	return `${formatNumber(minutes)} min · ${per}`;
 }
+
+/** "512 B", "18.4 KB", "3.2 MB" (1 KB = 1024 bytes). */
+export function formatBytes(bytes: number): string {
+	const value = Math.max(0, bytes || 0);
+	if (value < 1024) return `${formatNumber(value)} B`;
+	const units = ['KB', 'MB', 'GB'];
+	let scaled = value / 1024;
+	let unit = 0;
+	while (scaled >= 1024 && unit < units.length - 1) {
+		scaled /= 1024;
+		unit++;
+	}
+	return `${oneDecimal.format(Math.round(scaled * 10) / 10)} ${units[unit]}`;
+}

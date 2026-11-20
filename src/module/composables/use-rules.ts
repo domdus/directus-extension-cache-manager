@@ -16,6 +16,11 @@ export type RulesStatus = {
 	since: string;
 	counts: { full: number; targeted: number; skipped: number; removed: number };
 	recent: Array<{ at: string; kind: 'full' | 'targeted' | 'skipped'; collection: string | null; action: string | null; removed: number; reason: string }>;
+	/** null: not measurable (Redis) or the cache is off. */
+	size: { entries: number; bytes: number; expired: number; expiredBytes: number } | null;
+	swept: { entries: number; bytes: number };
+	bytesByCollection: Record<string, number>;
+	history: Array<{ hour: string; full: number; targeted: number; skipped: number; entries: number | null; bytes: number | null }>;
 };
 
 export type RulesState = {

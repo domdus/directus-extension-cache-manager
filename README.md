@@ -52,7 +52,7 @@ npm run build
 
 1. Open **Cache Manager → Ignore List** and pick a time period (last hour to last 7 days).
 2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared 296 times in the last 24 hours." Lower is better.
-3. Select collections in the table and click **Ignore selected** (or **Stop ignoring selected**), pick one with **Ignore another collection…**, or click **Ignore suggestion** in the **Suggestion** tile. The **Status** column shows what Save & Apply will change ("Will keep cache", "Will clear cache"). The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
+3. Select collections in the table and click **Ignore selected** (or **Stop ignoring selected**), pick one with **Ignore another collection…**, or click **Apply suggested** in the **Suggestion** tile. The **Status** column shows what Save & Apply will change ("Will keep cache", "Will clear cache"). The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
 4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share your unsaved changes.
 5. Click **Save & Apply** (✓) in the page header. It is used right away. **Discard Changes** (↶) next to it drops what you have not saved yet. Hover ✓ to see how many changes are not saved.
 
@@ -117,6 +117,8 @@ With more than five rules, a filter above the table finds rules by collection or
 
 **Cache Manager → Statistics** shows what actually happened in this Directus process: how often the whole cache was cleared, how often only affected answers were cleared, and which changes a rule kept. The last 50 events are listed with their reason, for example "Changed in services · 3 answers cleared" or "Only views_count changed in videos · Kept (rule)". Use it to check your rules before you rely on them. The page refreshes every 15 seconds; the numbers start at zero when Directus restarts. Granular Cache shows the three numbers at the top, with a link.
 
+**Cache Size** shows how much the cache holds in memory: entries, size, expired entries still waiting, and how much the extension freed. In Granular mode it also lists the largest collections. **Last 24 Hours** shows two bar charts per hour: the changes (whole cache, granular, kept by rule) and the largest cache size in that hour. The size is measured only with `CACHE_STORE=memory`; with Redis the page says so.
+
 ### How it works
 
 Directus has no setting or hook for this, so the extension steps in at three places at runtime. It does not patch Directus files.
@@ -161,6 +163,7 @@ A collection is suggested for ignoring when all of these are true (limits in `sr
 
 - **Not everything can be counted.** Collections without activity tracking and some Flow changes are not in the activity log, and Directus may delete old activity. The Ignore List page says when this affects the numbers.
 - **Several servers.** Saving changes the settings on the server that handles the save. If Directus runs on several servers, restart the others after saving. They use the saved settings when they start. The Status page warns when the settings in use don't match.
+- **Expired answers in memory.** With `CACHE_STORE=memory`, Directus deletes an expired answer only when someone asks for it again. Answers nobody asks for again stay in memory until the whole cache is cleared. With Auto Purge on, that happened often; with Granular mode, the Ignore List or Auto Purge off, it may never happen. The extension therefore deletes expired entries from the memory store once a minute, in every mode. Redis removes them itself.
 - **Saving clears the cache once**, because it writes to the project settings.
 - **Databases.** The Ignore List page works with PostgreSQL and MySQL. On other databases it shows an error. The settings still work.
 - **Browsers and proxies.** When **Auto Purge** is off, Directus also tells browsers and proxies how long they may keep an answer. It uses the value of **Cache Lifetime** for that, so a new value also applies there for new answers.

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { collectionOfPath, queryDependencies, type SchemaLike } from '../shared/dependencies';
 import { parseRules, ruleClears, ttlFor, validateRules, DEFAULT_RULE, type RulesConfig } from '../shared/rules';
 import { TagIndex } from '../shared/tag-index';
-import { applyRules, describeRequest, patchCache, patchItemsService, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
+import { answerSizeIn, measureStore, memoryStoreOf, storedSizeOf } from './store-size';
+import { applyRules, currentBucket, describeRequest, tick, patchCache, patchItemsService, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
 
 /* ---------- schema used by the dependency tests ---------- */
 
@@ -207,8 +208,8 @@ async function setup(config: RulesConfig) {
 	const rt = runtime();
 	rt.env = env;
 	rt.handlers = null;
-	const { handleClear, handleSet } = await import('./targeted');
-	rt.handlers = { clear: (c) => handleClear(rt, c), set: (c, k, v, t) => handleSet(rt, c, k, v, t) };
+	const { handleClear, handleSet, tick } = await import('./targeted');
+	rt.handlers = { clear: (c) => handleClear(rt, c), set: (c, k, v, t) => handleSet(rt, c, k, v, t), tick: () => tick(rt) };
 	assert.deepEqual(patchItemsService(Items, rt), []);
 	patchCache(cache as any, rt);
 	rt.middlewareRegistered = true;
@@ -384,4 +385,96 @@ test('status: restart needed without the request middleware; targeted then clear
 	assert.equal(cache.clears, before + 1, 'whole cache cleared, never a partial clear without dependency info');
 	rt.middlewareRegistered = true;
 	assert.deepEqual(runtimeStatus({ CACHE_ENABLED: true, CACHE_AUTO_PURGE: true }).problems, []);
+});
+
+/* ---------- store size, sweep and history ---------- */
+
+test('store size: counts entries and finds expired ones without parsing the value', () => {
+	const now = 1_000_000;
+	const store = new Map<string, unknown>([
+		['system:a', JSON.stringify({ value: ':base64:aGVsbG8=', expires: now + 60_000 })],
+		['system:b', JSON.stringify({ value: ':base64:"expires":1', expires: now - 1 })],
+		['system:c', JSON.stringify({ value: ':base64:eA==' })],
+	]);
+	const { size, swept } = measureStore(store, now, false);
+	assert.equal(size.entries, 3);
+	assert.equal(size.expired, 1);
+	assert.equal(swept.entries, 0);
+	assert.ok(size.bytes > size.expiredBytes);
+
+	const after = measureStore(store, now, true);
+	assert.equal(after.swept.entries, 1);
+	assert.equal(after.size.entries, 2);
+	assert.equal(after.size.expired, 0);
+	assert.deepEqual([...store.keys()], ['system:a', 'system:c']);
+});
+
+test('store size: finds the Map of Keyv 4 and 5, not of Redis', () => {
+	const map = new Map();
+	assert.equal(memoryStoreOf({ store: map }), map);
+	assert.equal(memoryStoreOf({ opts: { store: map } }), map);
+	assert.equal(memoryStoreOf({ store: { get() {} } }), null);
+	assert.equal(storedSizeOf(Buffer.alloc(3)), 4);
+});
+
+test('store size: an answer counts with its namespace and its __expires_at entry', () => {
+	const store = new Map<string, unknown>([
+		['ns:abc', '1234567890'],
+		['ns:abc__expires_at', '12345'],
+	]);
+	const keyv = { opts: { namespace: 'ns' } };
+	assert.equal(answerSizeIn(store, keyv, 'abc'), 'ns:abc'.length + 10 + 'ns:abc__expires_at'.length + 5);
+	assert.equal(answerSizeIn(store, keyv, 'missing'), null);
+});
+
+test('tick: sweeps expired entries from the memory store and notes the size per hour', async () => {
+	const rt = await setup({ targeted: true, collections: {} });
+	const store = new Map<string, unknown>();
+	(cache as any).store = store;
+	const now = Date.now();
+	store.set('k:old', JSON.stringify({ value: 'x'.repeat(100), expires: now - 1 }));
+	store.set('k:new', JSON.stringify({ value: 'y', expires: now + 60_000 }));
+	assert.equal(runtimeStatus(env).size?.expired, 1);
+
+	tick(rt, now);
+	const status = runtimeStatus(env);
+	assert.equal(status.swept.entries, 1);
+	assert.equal(status.size?.entries, 1);
+	assert.equal(status.history.length, 24);
+	assert.equal(status.history[23].entries, 2, 'the largest size in the hour, before the sweep');
+	assert.ok(status.history[23].full >= 1, 'the switch to Granular counts as a whole-cache clear');
+});
+
+test('history: one bucket per hour, at most 24', async () => {
+	const rt = await setup({ targeted: false, collections: {} });
+	const start = Date.parse('2026-01-01T00:30:00Z');
+	for (let h = 0; h < 30; h++) currentBucket(rt, start + h * 3_600_000).skipped++;
+	assert.equal(rt.history.length, 24);
+	assert.equal(rt.history[0].hour, '2026-01-01T06:00:00.000Z');
+});
+
+test('status: no size for a store that is not in memory', async () => {
+	await setup({ targeted: false, collections: {} });
+	(cache as any).store = { get() {} };
+	assert.equal(runtimeStatus(env).size, null);
+});
+
+test('reload: a runtime from an older version gets the fields it lacks', async () => {
+	resetRuntimeForTests();
+	const old = runtime() as any;
+	delete old.history;
+	delete old.swept;
+	// An index made by an older class: same data, no bytes() method, entries without a size.
+	class OldIndex {
+		byTag = new Map([['pages', new Set(['k'])]]);
+		byKey = new Map([['k', { tags: ['pages'], expires: Date.now() + 60_000 }]]);
+	}
+	old.index = new OldIndex();
+	const rt = runtime();
+	assert.deepEqual(rt.index.bytes(), { pages: 0 });
+	assert.equal(rt.index.size, 1);
+	assert.equal(rt, old);
+	assert.deepEqual(rt.history, []);
+	assert.deepEqual(rt.swept, { entries: 0, bytes: 0 });
+	assert.equal(runtimeStatus(env).history.length, 24);
 });

@@ -4,6 +4,7 @@ import { parseDuration } from '../shared/duration';
 import { DEFAULT_RULES, isTargetable, ruleClears, ruleFor, ttlFor, type RulesConfig, type WriteAction } from '../shared/rules';
 import { TagIndex } from '../shared/tag-index';
 import { LOG_PREFIX } from '../shared/constants';
+import { answerSizeIn, measureStore, memoryStoreOf, storedSizeOf, type StoreSize, type SweepResult } from './store-size';
 
 /**
  * Granular Cache: rules per collection and targeted clearing, hooked into Directus at runtime (no core patch):
@@ -46,6 +47,16 @@ export type ClearEvent = {
 	reason: string;
 };
 
+/** One hour of history. `entries`/`bytes`: the largest store size measured in that hour (memory store only). */
+export type HistoryBucket = {
+	hour: string;
+	full: number;
+	targeted: number;
+	skipped: number;
+	entries: number | null;
+	bytes: number | null;
+};
+
 export type RuntimeStatus = {
 	installed: boolean;
 	problems: string[];
@@ -58,6 +69,13 @@ export type RuntimeStatus = {
 	since: string;
 	counts: { full: number; targeted: number; skipped: number; removed: number };
 	recent: ClearEvent[];
+	/** null: the store can't be measured (Redis) or the cache is off. */
+	size: StoreSize | null;
+	/** Expired entries the extension deleted from the memory store since Directus started. */
+	swept: SweepResult;
+	bytesByCollection: Record<string, number>;
+	/** The last 24 hours, oldest first. */
+	history: HistoryBucket[];
 };
 
 type Runtime = {
@@ -75,6 +93,8 @@ type Runtime = {
 	since: string;
 	counts: RuntimeStatus['counts'];
 	recent: ClearEvent[];
+	swept: SweepResult;
+	history: HistoryBucket[];
 	pruneTimer: ReturnType<typeof setInterval> | null;
 	/**
 	 * Clear counter. An answer read before a write but stored after it would be stale until it expires (Directus core
@@ -89,6 +109,7 @@ type Runtime = {
 	handlers: {
 		clear: (cache: KeyvLike) => Promise<void>;
 		set: (cache: KeyvLike, key: string, value: unknown, ttl?: number) => Promise<unknown>;
+		tick: () => void;
 	} | null;
 	env: Record<string, unknown>;
 	database: any;
@@ -102,6 +123,8 @@ const KEY = Symbol.for('directus-extension-cache-manager.targeted');
  */
 const BOOKKEEPING = new Set(['directus_activity', 'directus_revisions']);
 const MAX_RECENT = 50;
+const HISTORY_HOURS = 24;
+const HOUR = 3_600_000;
 const DELETE_CHUNK = 500;
 
 export const WRITE_METHODS: Record<string, WriteAction> = {
@@ -115,7 +138,19 @@ export const WRITE_METHODS: Record<string, WriteAction> = {
 
 export function runtime(): Runtime {
 	const holder = globalThis as unknown as Record<symbol, Runtime | undefined>;
-	return (holder[KEY] ??= {
+	const fresh = freshRuntime();
+	const rt = (holder[KEY] ??= fresh);
+	// An extension reload keeps the runtime of the older version (it lives on globalThis): add the fields it lacks.
+	if (rt !== fresh) {
+		for (const [field, value] of Object.entries(fresh)) if ((rt as any)[field] === undefined) (rt as any)[field] = value;
+		// The index object was made by the older code: give it the methods of this version (same data fields).
+		if (Object.getPrototypeOf(rt.index) !== TagIndex.prototype) Object.setPrototypeOf(rt.index, TagIndex.prototype);
+	}
+	return rt;
+}
+
+function freshRuntime(): Runtime {
+	return {
 		config: { ...DEFAULT_RULES, collections: {} },
 		cache: null,
 		originals: null,
@@ -129,6 +164,8 @@ export function runtime(): Runtime {
 		since: new Date().toISOString(),
 		counts: { full: 0, targeted: 0, skipped: 0, removed: 0 },
 		recent: [],
+		swept: { entries: 0, bytes: 0 },
+		history: [],
 		pruneTimer: null,
 		seq: 0,
 		fullClearedAt: 0,
@@ -138,14 +175,31 @@ export function runtime(): Runtime {
 		env: {},
 		database: null,
 		logger: null,
-	});
+	};
 }
 
 function globalTtlMs(env: Record<string, unknown>): number {
 	return parseDuration(env['CACHE_TTL']) ?? 5 * 60_000;
 }
 
+/** The history bucket of the current hour (created on demand, older than 24 hours dropped). */
+export function currentBucket(rt: Runtime, now = Date.now()): HistoryBucket {
+	const hour = new Date(Math.floor(now / HOUR) * HOUR).toISOString();
+	let bucket = rt.history[rt.history.length - 1];
+	if (bucket?.hour !== hour) {
+		bucket = { hour, full: 0, targeted: 0, skipped: 0, entries: null, bytes: null };
+		rt.history.push(bucket);
+		if (rt.history.length > HISTORY_HOURS) rt.history.splice(0, rt.history.length - HISTORY_HOURS);
+	}
+	return bucket;
+}
+
 function record(rt: Runtime, event: Omit<ClearEvent, 'at'>) {
+	try {
+		currentBucket(rt)[event.kind]++;
+	} catch {
+		// Statistics must never break a clear (and with it the write that caused it).
+	}
 	rt.counts[event.kind]++;
 	rt.counts.removed += event.removed;
 	rt.recent.unshift({ at: new Date().toISOString(), ...event });
@@ -314,7 +368,7 @@ export async function handleSet(rt: Runtime, cache: KeyvLike, key: string, value
 		await cache.delete(key);
 		return result;
 	}
-	if (!key.endsWith('__expires_at')) rt.index.add(key, request?.deps ?? new Set([ANY]), Date.now() + (ttl ?? globalTtlMs(rt.env)));
+	if (!key.endsWith('__expires_at')) rt.index.add(key, request?.deps ?? new Set([ANY]), Date.now() + (ttl ?? globalTtlMs(rt.env)), key.length + storedSizeOf(value));
 	return result;
 }
 
@@ -413,6 +467,7 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 	rt.handlers = {
 		clear: (cache) => handleClear(rt, cache),
 		set: (cache, key, value, ttl) => handleSet(rt, cache, key, value, ttl),
+		tick: () => tick(rt),
 	};
 	const problems: string[] = [];
 	problems.push(...patchItemsService(ctx.services?.ItemsService, rt));
@@ -429,11 +484,29 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 	if (!rt.cache) problems.push(ctx.env['CACHE_ENABLED'] === true ? 'The Directus cache could not be reached' : 'The cache is off (CACHE_ENABLED)');
 	rt.problems = problems;
 
-	rt.pruneTimer ??= setInterval(() => rt.index.prune(Date.now()), 60_000);
+	// Replaced on every install: a timer of an older version (before a reload) would run its old code.
+	if (rt.pruneTimer) clearInterval(rt.pruneTimer);
+	rt.pruneTimer = setInterval(() => runtime().handlers?.tick(), 60_000);
 	(rt.pruneTimer as any).unref?.();
 
 	await applyRules(config, 'startup');
 	if (problems.length) ctx.logger.warn(`${LOG_PREFIX} granular cache is limited: ${problems.join('; ')}`);
+}
+
+/**
+ * Every minute: forget expired answers in the index, delete expired entries from the memory store (Keyv only does
+ * that when the key is read again) and note the store size for the history. Exported for tests.
+ */
+export function tick(rt: Runtime, now = Date.now()) {
+	rt.index.prune(now);
+	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
+	const bucket = currentBucket(rt, now);
+	if (!store) return;
+	const { size, swept } = measureStore(store, now, true);
+	rt.swept.entries += swept.entries;
+	rt.swept.bytes += swept.bytes;
+	bucket.entries = Math.max(bucket.entries ?? 0, size.entries);
+	bucket.bytes = Math.max(bucket.bytes ?? 0, size.bytes);
 }
 
 /** Uses new rules. Turning targeted clearing on clears the cache once: older answers are not indexed. */
@@ -462,6 +535,13 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 	const rt = runtime();
 	const problems = [...rt.problems];
 	if (!rt.handlers || !rt.middlewareRegistered) problems.unshift(RESTART_PROBLEM);
+	const size = sizeNow(rt);
+	if (size) {
+		// The current hour shows the size right away, not only after the next sweep.
+		const bucket = currentBucket(rt);
+		bucket.entries = Math.max(bucket.entries ?? 0, size.entries);
+		bucket.bytes = Math.max(bucket.bytes ?? 0, size.bytes);
+	}
 	return {
 		installed: !!rt.handlers && rt.middlewareRegistered,
 		problems,
@@ -474,7 +554,32 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		since: rt.since,
 		counts: { ...rt.counts },
 		recent: [...rt.recent],
+		size,
+		swept: { ...rt.swept },
+		bytesByCollection: bytesByCollection(rt),
+		history: lastDay(rt),
 	};
+}
+
+function bytesByCollection(rt: Runtime): Record<string, number> {
+	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
+	return store ? rt.index.bytes((key) => answerSizeIn(store, rt.cache, key)) : rt.index.bytes();
+}
+
+function sizeNow(rt: Runtime): StoreSize | null {
+	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
+	return store ? measureStore(store, Date.now(), false).size : null;
+}
+
+/** 24 hourly buckets ending with the current hour; hours without events are empty. */
+function lastDay(rt: Runtime, now = Date.now()): HistoryBucket[] {
+	currentBucket(rt, now);
+	const byHour = new Map(rt.history.map((bucket) => [bucket.hour, bucket]));
+	const first = Math.floor(now / HOUR) * HOUR - (HISTORY_HOURS - 1) * HOUR;
+	return Array.from({ length: HISTORY_HOURS }, (_, i) => {
+		const hour = new Date(first + i * HOUR).toISOString();
+		return { ...(byHour.get(hour) ?? { hour, full: 0, targeted: 0, skipped: 0, entries: null, bytes: null }) };
+	});
 }
 
 /** For tests: a fresh runtime. */
