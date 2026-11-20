@@ -237,7 +237,7 @@ import { formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
 const { data, draft, loading, saving, error, message, dirty, canSave, invalidTtl, load, save, discard, addRule, removeRule, updateRule } = useRules();
-const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
+const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
 const actions = ['create', 'update', 'delete'] as const;
 
 const ruleNames = computed(() => Object.keys(draft.collections).sort());
@@ -307,12 +307,12 @@ onMounted(load);
 .sidebar-text {
 	margin: 0 0 16px;
 	line-height: 1.55;
-	color: var(--theme--foreground);
+	color: var(--theme--foreground, var(--foreground-normal));
 }
 .subdued,
 .meta,
 .explain {
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	line-height: 1.5;
 }
 .meta {
@@ -338,16 +338,16 @@ onMounted(load);
 	padding: 16px 18px;
 	text-align: left;
 	color: inherit;
-	border-radius: var(--theme--border-radius);
-	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
-	background: var(--theme--background);
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	background: var(--theme--background, var(--background-page));
 	cursor: pointer;
 }
 .option.active {
-	border-color: var(--theme--primary);
+	border-color: var(--theme--primary, var(--primary));
 }
 .option.active > .v-icon {
-	color: var(--theme--primary);
+	color: var(--theme--primary, var(--primary));
 }
 .option-text {
 	display: flex;
@@ -369,8 +369,8 @@ onMounted(load);
 }
 .table-wrap {
 	overflow: auto;
-	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
-	border-radius: var(--theme--border-radius);
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	border-radius: var(--theme--border-radius, var(--border-radius));
 }
 table {
 	width: 100%;
@@ -382,14 +382,14 @@ td {
 	padding: 8px 10px;
 	text-align: left;
 	vertical-align: middle;
-	border-bottom: var(--theme--border-width) solid var(--theme--border-color-subdued);
+	border-bottom: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 }
 tbody tr:last-child td {
 	border-bottom: none;
 }
 th {
 	font-weight: 700;
-	background: var(--theme--background-subdued);
+	background: var(--theme--background-subdued, var(--background-subdued));
 }
 th.center,
 td.center {
@@ -402,13 +402,13 @@ td.center :deep(.v-checkbox) {
 }
 .name {
 	display: block;
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 }
 .row-hint {
 	display: block;
 	margin-top: 2px;
 	font-size: 12px;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .fields-col {
 	min-width: 220px;
@@ -428,13 +428,13 @@ td.center :deep(.v-checkbox) {
 	white-space: nowrap;
 }
 .result--full {
-	color: var(--theme--warning);
+	color: var(--theme--warning, var(--warning));
 }
 .result--targeted {
-	color: var(--theme--success);
+	color: var(--theme--success, var(--success));
 }
 .result--skipped {
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .tiles {
 	display: grid;
@@ -452,9 +452,9 @@ td.center :deep(.v-checkbox) {
 	gap: 8px;
 	min-width: 0;
 	padding: 16px 18px;
-	border-radius: var(--theme--border-radius);
-	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
-	background: var(--theme--background);
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	background: var(--theme--background, var(--background-page));
 }
 .tile .label {
 	font-size: 15px;
@@ -468,13 +468,13 @@ td.center :deep(.v-checkbox) {
 .field-error {
 	display: block;
 	font-size: 12px;
-	color: var(--theme--danger);
+	color: var(--theme--danger, var(--danger));
 }
 .invalid {
-	--theme--form--field--input--border-color: var(--theme--danger);
+	--theme--form--field--input--border-color: var(--theme--danger, var(--danger));
 }
 code {
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 0.9em;
 }
 .save-bar {
@@ -488,15 +488,15 @@ code {
 	gap: 12px;
 	margin-top: 20px;
 	padding: 12px 0;
-	border-top: var(--theme--border-width, 1px) solid var(--theme--border-color-subdued);
-	background: var(--theme--background);
+	border-top: var(--theme--border-width, var(--border-width, 1px)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	background: var(--theme--background, var(--background-page));
 }
 .muted {
 	margin-right: auto;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .muted.danger {
-	color: var(--theme--danger);
+	color: var(--theme--danger, var(--danger));
 }
 .actions-right {
 	display: flex;

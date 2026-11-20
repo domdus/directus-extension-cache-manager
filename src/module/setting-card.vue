@@ -88,9 +88,9 @@ function text(value: Value | null | undefined): string {
 	gap: 12px;
 	min-width: 0;
 	padding: 16px 18px;
-	border-radius: var(--theme--border-radius);
-	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
-	background: var(--theme--background);
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	background: var(--theme--background, var(--background-page));
 }
 .card-titles {
 	display: flex;
@@ -103,9 +103,9 @@ function text(value: Value | null | undefined): string {
 	letter-spacing: 0.01em;
 }
 .env-name {
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 12px;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	overflow-wrap: anywhere;
 }
 .in-effect {
@@ -115,7 +115,7 @@ function text(value: Value | null | undefined): string {
 }
 .caption {
 	font-size: 12px;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .value {
 	font-size: 18px;
@@ -127,10 +127,10 @@ function text(value: Value | null | undefined): string {
 	gap: 6px;
 }
 .chips .added-here {
-	--v-chip-color: var(--theme--primary);
-	--v-chip-background-color: var(--theme--primary-background);
-	--v-chip-color-hover: var(--theme--primary);
-	--v-chip-background-color-hover: var(--theme--primary-subdued);
+	--v-chip-color: var(--theme--primary, var(--primary));
+	--v-chip-background-color: var(--theme--primary-background, var(--primary-alt));
+	--v-chip-color-hover: var(--theme--primary, var(--primary));
+	--v-chip-background-color-hover: var(--theme--primary-subdued, var(--primary-alt));
 	cursor: help;
 }
 .legend {
@@ -138,21 +138,21 @@ function text(value: Value | null | undefined): string {
 	align-items: center;
 	gap: 6px;
 	font-size: 12px;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .legend-dot {
 	flex: none;
 	inline-size: 8px;
 	block-size: 8px;
 	border-radius: 50%;
-	background: var(--theme--primary);
+	background: var(--theme--primary, var(--primary));
 }
 .lines {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 	font-size: 12px;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	overflow-wrap: anywhere;
 }
 .edit {
@@ -164,6 +164,6 @@ function text(value: Value | null | undefined): string {
 	display: flex;
 	justify-content: flex-end;
 	padding-block-start: 12px;
-	border-block-start: var(--theme--border-width) solid var(--theme--border-color-subdued);
+	border-block-start: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 }
 </style>

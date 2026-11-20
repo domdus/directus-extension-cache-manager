@@ -16,7 +16,7 @@ Directus' only built-in way out is the ignore list (`CACHE_AUTO_PURGE_IGNORE_LIS
 
 ## Installation
 
-Supports **Directus 11 through 12.x**.
+Supports **Directus 9.26 through 12.x**. Tested with 9.26, 10.13, 11.7, 11.17 and 12.5.
 
 ### npm
 
@@ -126,7 +126,7 @@ An answer that was read just before a change but is stored just after it would b
 ### Requirements
 
 - **One Directus process.** The list of which answer uses which collection lives in memory. With several processes (which need Redis anyway), use **The whole cache**. The page warns when the cache is kept in Redis.
-- **Tested with Directus 10.13, 11.7, 11.17 and 12.5** (Postgres, memory cache). Because it relies on how Directus works inside, a future version may change that. If the extension can't attach, the page says so and Directus clears the whole cache as usual.
+- **Tested with Directus 9.26, 10.13, 11.7, 11.17 and 12.5** (Postgres, memory cache). Because it relies on how Directus works inside, a future version may change that. If the extension can't attach, the page says so and Directus clears the whole cache as usual.
 - **Apps still need `Cache-Control: no-store`** for reads that must be up to date right away, for example access checks after a purchase.
 
 ## How the Optimize page counts

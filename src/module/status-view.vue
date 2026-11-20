@@ -159,7 +159,7 @@ import { usePageClass } from './composables/use-page-class';
 
 const pageClass = usePageClass();
 const { state, draft, busy, ttlValid, loadingState, error, message, loadState, reset } = useCacheManager();
-const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
+const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
 
 function onOff(value: boolean) {
 	return value ? 'On' : 'Off';
@@ -194,11 +194,11 @@ onMounted(() => loadState(true));
 .sidebar-text {
 	margin: 0 0 16px;
 	line-height: 1.55;
-	color: var(--theme--foreground);
+	color: var(--theme--foreground, var(--foreground-normal));
 }
 .subdued,
 .meta {
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .reset-row {
 	margin-top: 12px;
@@ -208,7 +208,7 @@ onMounted(() => loadState(true));
 	line-height: 1.55;
 }
 .meta a {
-	color: var(--theme--primary);
+	color: var(--theme--primary, var(--primary));
 }
 .toggles {
 	display: grid;
@@ -216,8 +216,8 @@ onMounted(() => loadState(true));
 	max-inline-size: 36rem;
 }
 .env-name {
-	color: var(--theme--foreground-subdued);
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 12px;
 }
 .cards {
@@ -239,18 +239,18 @@ onMounted(() => loadState(true));
 }
 .field-error {
 	font-size: 12px;
-	color: var(--theme--danger);
+	color: var(--theme--danger, var(--danger));
 }
 .field-hint {
 	font-size: 12px;
 	line-height: 1.5;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .invalid {
-	--theme--form--field--input--border-color: var(--theme--danger);
+	--theme--form--field--input--border-color: var(--theme--danger, var(--danger));
 }
 code {
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 0.9em;
 }
 </style>

@@ -31,15 +31,15 @@ const status = computed(() => saveBarText(pendingChanges(draft, state.value?.eff
 	gap: 12px;
 	margin-top: 20px;
 	padding: 12px 0;
-	border-top: var(--theme--border-width, 1px) solid var(--theme--border-color-subdued);
-	background: var(--theme--background);
+	border-top: var(--theme--border-width, var(--border-width, 1px)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	background: var(--theme--background, var(--background-page));
 }
 .muted {
 	margin-right: auto;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .muted.danger {
-	color: var(--theme--danger);
+	color: var(--theme--danger, var(--danger));
 }
 .actions-right {
 	display: flex;

@@ -277,7 +277,7 @@ const pageClass = usePageClass();
 const { state, analysis, draft, draftSet, hours, busy, dirty, saving, loadingAnalysis, whatIf, error, message, loadState, loadAnalysis, toggle, add } =
 	useCacheManager();
 
-const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued)' };
+const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
 const hourItems = [1, 6, 24, 72, 168].map((value) => ({ text: `Last ${formatWindow(value)}`, value }));
 
 
@@ -394,7 +394,7 @@ onMounted(async () => {
 .sidebar-text {
 	margin: 0 0 16px;
 	line-height: 1.55;
-	color: var(--theme--foreground);
+	color: var(--theme--foreground, var(--foreground-normal));
 }
 .sidebar-list {
 	margin: 0 0 16px 20px;
@@ -433,12 +433,12 @@ onMounted(async () => {
 	gap: 8px;
 	min-width: 0;
 	padding: 16px 18px;
-	border-radius: var(--theme--border-radius);
-	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
-	background: var(--theme--background);
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	background: var(--theme--background, var(--background-page));
 }
 .tile.changed {
-	border-color: var(--theme--primary);
+	border-color: var(--theme--primary, var(--primary));
 }
 .tile.empty .explain {
 	font-style: italic;
@@ -455,7 +455,7 @@ onMounted(async () => {
 	flex-wrap: wrap;
 }
 .tile .unit {
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .tile .value {
 	font-size: 18px;
@@ -468,7 +468,7 @@ onMounted(async () => {
 .tile .explain,
 .subdued,
 .meta {
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	line-height: 1.5;
 }
 .meta {
@@ -476,8 +476,8 @@ onMounted(async () => {
 }
 .table-wrap {
 	overflow: auto;
-	border: var(--theme--border-width) solid var(--theme--border-color-subdued);
-	border-radius: var(--theme--border-radius);
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	border-radius: var(--theme--border-radius, var(--border-radius));
 }
 table {
 	width: 100%;
@@ -489,20 +489,20 @@ td {
 	padding: 8px 10px;
 	text-align: left;
 	vertical-align: middle;
-	border-bottom: var(--theme--border-width) solid var(--theme--border-color-subdued);
+	border-bottom: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 }
 tbody tr:last-child td {
 	border-bottom: none;
 }
 th {
 	font-weight: 700;
-	background: var(--theme--background-subdued);
+	background: var(--theme--background-subdued, var(--background-subdued));
 	position: sticky;
 	top: 0;
 	z-index: 1;
 }
 .name {
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 }
 .check-col {
 	width: 36px;
@@ -522,7 +522,7 @@ th {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	color: var(--theme--foreground-subdued);
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	white-space: nowrap;
 }
 .state::before {
@@ -534,11 +534,11 @@ th {
 }
 /* Keeps cache (ignored): changes never clear the cache. */
 .state--ignored {
-	color: var(--theme--success);
+	color: var(--theme--success, var(--success));
 }
 /* Clears the cache at least once per hour on average. */
 .state--clears {
-	color: var(--theme--warning);
+	color: var(--theme--warning, var(--warning));
 }
 /* Not saved yet: what Save & Apply will change. */
 .state--pending {
@@ -550,10 +550,10 @@ th {
 	box-sizing: border-box;
 }
 .state--pending-ignore {
-	color: var(--theme--success);
+	color: var(--theme--success, var(--success));
 }
 .state--pending-clear {
-	color: var(--theme--warning);
+	color: var(--theme--warning, var(--warning));
 }
 .selection-actions {
 	display: flex;
@@ -561,22 +561,22 @@ th {
 	gap: 8px;
 }
 .warning-text {
-	color: var(--theme--warning);
+	color: var(--theme--warning, var(--warning));
 }
 .badge {
 	display: inline-block;
 	padding: 2px 8px;
 	margin-right: 6px;
 	border-radius: 12px;
-	background: var(--theme--primary);
-	color: var(--theme--foreground-inverted, #fff);
+	background: var(--theme--primary, var(--primary));
+	color: var(--theme--foreground-inverted, var(--foreground-inverted, #fff));
 	font-size: 12px;
 }
 .badge--warning {
-	background: var(--theme--warning);
+	background: var(--theme--warning, var(--warning));
 }
 code {
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 0.9em;
 }
 </style>

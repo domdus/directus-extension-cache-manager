@@ -22,7 +22,7 @@
 				class="section-divider"
 				large
 				:inline-title="false"
-				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued)' }"
+				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' }"
 			>
 				<template #icon><v-icon name="system_update" /></template>
 				Extension Updates
@@ -52,7 +52,7 @@
 				class="section-divider add-margin-top"
 				large
 				:inline-title="false"
-				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued)' }"
+				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' }"
 			>
 				<template #icon><v-icon name="import_export" /></template>
 				Export / Import
@@ -76,7 +76,7 @@
 				class="section-divider add-margin-top"
 				large
 				:inline-title="false"
-				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued)' }"
+				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' }"
 			>
 				<template #icon><v-icon name="delete" /></template>
 				Remove extension data
@@ -326,11 +326,11 @@ async function runCleanup() {
 .explain {
 	margin: 0 0 16px;
 	line-height: 1.55;
-	color: var(--theme--foreground);
+	color: var(--theme--foreground, var(--foreground-normal));
 }
 
 .explain code {
-	font-family: var(--theme--fonts--monospace--font-family, monospace);
+	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 0.9em;
 }
 
@@ -361,6 +361,6 @@ async function runCleanup() {
 .sidebar-text {
 	margin: 0 0 16px;
 	line-height: 1.55;
-	color: var(--theme--foreground);
+	color: var(--theme--foreground, var(--foreground-normal));
 }
 </style>

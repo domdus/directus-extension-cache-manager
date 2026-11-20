@@ -56,7 +56,7 @@
 				"source": "src/hook/index.ts"
 			}
 		],
-		"host": ">=11.0.0 <13.0.0"
+		"host": ">=9.26.0 <13.0.0"
 	},
 	"scripts": {
 		"build": "directus-extension build",
