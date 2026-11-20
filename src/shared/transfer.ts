@@ -11,7 +11,7 @@ export type ExportFile = {
 	/** The saved values; null = nothing saved, the configured values are in use. */
 	settings: OverrideInput | null;
 	updatedAt: string | null;
-	/** Clearing rules (Clearing Rules page). Missing in files from older versions. */
+	/** Rules of the Granular Cache page. Missing in files from older versions. */
 	rules?: RulesConfig;
 };
 

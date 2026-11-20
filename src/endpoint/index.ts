@@ -196,7 +196,7 @@ export default defineEndpoint({
 			const effective = readValues(env);
 			return {
 				config: await readRules(database),
-				status: runtimeStatus(),
+				status: runtimeStatus(env),
 				globalTtl: effective.ttl,
 				ignoreList: effective.ignoreList,
 				collections: Object.keys(fields)
@@ -217,7 +217,7 @@ export default defineEndpoint({
 				await ensureSettingsField(ctx);
 				await writeRules(ctx, accountability, result.value);
 				await applyRules(result.value, 'save');
-				logger.info(`${LOG_PREFIX} clearing rules saved by ${accountability.user}: ${describeRules(result.value)}`);
+				logger.info(`${LOG_PREFIX} granular cache rules saved by ${accountability.user}: ${describeRules(result.value)}`);
 				return rules();
 			}),
 		);

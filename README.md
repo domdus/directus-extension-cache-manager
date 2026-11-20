@@ -2,9 +2,9 @@
 
 Stop Directus from throwing away its whole cache on every change. Cache Manager shows what clears the cache, lets you ignore busy collections, and can make a change clear **only the cached answers that use the changed collection**. Everything is set in the Data Studio. No config files, no restart.
 
-<img alt="Cache Manager — Clearing Rules" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/clearing-rules.png" width="800" />
+<img alt="Cache Manager — Granular Cache" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/granular-cache.png" width="800" />
 
-Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Optimize** shows what clears the cache and lets you choose which collections to ignore. Changes to an ignored collection don't clear the cache. **Clearing Rules** makes a change clear only the cached answers that use the changed collection, and sets rules and cache lifetimes per collection. **Settings** checks for updates, exports and imports what you saved, and removes the extension's data before you uninstall.
+Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Optimize** shows what clears the cache and lets you choose which collections to ignore. Changes to an ignored collection don't clear the cache. **Granular Cache** makes a change clear only the cached answers that use the changed collection, and sets rules and cache lifetimes per collection. **Settings** checks for updates, exports and imports what you saved, and removes the extension's data before you uninstall.
 
 ## Why
 
@@ -12,7 +12,7 @@ Directus keeps a copy of its answers, the cache, so it does not have to ask the 
 
 One busy collection, such as a view counter or a statistics log, can clear the cache almost every minute. Then the cache hardly helps. Finding that collection usually means searching the activity log by hand, changing the configuration and restarting Directus. This extension does the counting for you and applies your choice at once.
 
-Directus' only built-in way out is the ignore list (`CACHE_AUTO_PURGE_IGNORE_LIST`). It is all or nothing: an ignored collection never clears anything, so its own answers stay old until they expire, and every app that needs it up to date has to send `Cache-Control: no-store`. The list also keeps growing, and someone has to find out first which collections belong on it. **Clearing Rules** solves the actual problem instead: a counted visit only clears the cached answers that contain visits. Pages, videos and everything else stay cached.
+Directus' only built-in way out is the ignore list (`CACHE_AUTO_PURGE_IGNORE_LIST`). It is all or nothing: an ignored collection never clears anything, so its own answers stay old until they expire, and every app that needs it up to date has to send `Cache-Control: no-store`. The list also keeps growing, and someone has to find out first which collections belong on it. **Granular Cache** solves the actual problem instead: a counted visit only clears the cached answers that contain visits. Pages, videos and everything else stay cached.
 
 ## Installation
 
@@ -79,13 +79,13 @@ Ignored collections can be served from the cache for up to that time after a cha
 
 Don't ignore collections that decide what users may see or buy, like subscriptions, purchases or access rights. Only ignore them if the apps that read them ask for fresh data. Otherwise a user could get or lose access late.
 
-## Clearing Rules
+## Granular Cache
 
 ### What it does
 
 A cached **answer** is one API response that Directus keeps, for example `GET /items/pages?fields=title,service.name`. Normally any change clears all of them.
 
-On **Cache Manager → Clearing Rules**, choose what a change clears:
+On **Cache Manager → Granular Cache**, choose what a change clears:
 
 - **The whole cache**: Directus' default.
 - **Only what changed**: a change clears only the answers that use the changed collection. Examples:
@@ -125,6 +125,7 @@ An answer that was read just before a change but is stored just after it would b
 
 ### Requirements
 
+- **Restart Directus after installing or updating the extension.** Directus reloads an updated extension without a restart, but Granular Cache can only hook into the request handling at startup. Until the restart, the page says so, rules per collection already work, and "Only what changed" clears the whole cache.
 - **One Directus process.** The list of which answer uses which collection lives in memory. With several processes (which need Redis anyway), use **The whole cache**. The page warns when the cache is kept in Redis.
 - **Tested with Directus 9.26, 10.13, 11.7, 11.17 and 12.5** (Postgres, memory cache). Because it relies on how Directus works inside, a future version may change that. If the extension can't attach, the page says so and Directus clears the whole cache as usual.
 - **Apps still need `Cache-Control: no-store`** for reads that must be up to date right away, for example access checks after a purchase.
@@ -169,7 +170,7 @@ A collection is suggested for ignoring when all of these are true (limits in `sr
 - These changes are lost when Directus restarts, so a hook applies the saved values again at startup (`app.before`).
 - Saving goes through the settings service, so it appears in the activity log and revisions under the admin who saved.
 - The Optimize page uses one grouped query on `directus_activity` (creates, updates and deletes in the chosen period, per collection and minute).
-- Clearing rules (`src/api/targeted.ts`):
+- Granular Cache (`src/api/targeted.ts`):
   - The hook wraps the write methods of `ItemsService` (`createOne`, `createMany`, `updateBatch`, `updateMany`, `upsertMany`, `deleteMany`) and keeps the collection, action and fields of each write and its nested writes in an `AsyncLocalStorage` context. Nested writes are recorded on the parent because Directus tells many of them not to clear (`autoPurgeCache: false`) and relies on the parent clearing everything.
   - It wraps `clear()` and `set()` of the shared response cache (Keyv). `clear()` inside a write applies the rules and deletes only the indexed keys of the written collections; outside a write it clears everything. Activity and revision records written during a save never cause a clear on their own.
   - A middleware after Directus' cache check (`init('middlewares.after')`) works out what the answer depends on (`src/shared/dependencies.ts`) and its lifetime, which `set()` applies (also on Directus versions that ignore `res.locals.cacheTTL`).
@@ -185,8 +186,8 @@ All routes need an admin.
 | `GET /cache-manager/analysis?hours=24&candidate=a,b` | Numbers for the Optimize page; `candidate` adds a what-if value for that list |
 | `POST /cache-manager/apply` | Body `{ "autoPurge": true, "skipAllowed": null, "ignoreList": ["view_counter"], "ttl": "1h" }`. `null` or missing = configured value. List entries must be existing collections |
 | `POST /cache-manager/reset` | Remove the saved values and use the configured values |
-| `POST /cache-manager/cleanup` | Use the configured values, the default clearing rules, and delete the `cache_manager` field |
-| `GET /cache-manager/rules` | Clearing rules, what happened since start, collections and fields |
+| `POST /cache-manager/cleanup` | Use the configured values, the default Granular Cache rules, and delete the `cache_manager` field |
+| `GET /cache-manager/rules` | Granular Cache rules, what happened since start, collections and fields |
 | `POST /cache-manager/rules` | Body `{ "targeted": true, "collections": { "com_videos": { "update": true, "skipFields": ["views_count"], "ttl": "10m" } } }`. Missing values = default (clear on create, update and delete; global lifetime) |
 
 ### Development

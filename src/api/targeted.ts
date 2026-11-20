@@ -6,7 +6,7 @@ import { TagIndex } from '../shared/tag-index';
 import { LOG_PREFIX } from '../shared/constants';
 
 /**
- * Clearing rules and targeted clearing, hooked into Directus at runtime (no core patch):
+ * Granular Cache: rules per collection and targeted clearing, hooked into Directus at runtime (no core patch):
  *
  * - The response cache is one Keyv instance shared by all ItemsServices. Its `clear()` is wrapped: when a write
  *   asks to clear, the rules decide whether it clears at all, and in targeted mode only the answers that use the
@@ -65,6 +65,8 @@ type Runtime = {
 	cache: KeyvLike | null;
 	originals: { clear: KeyvLike['clear']; set: KeyvLike['set'] } | null;
 	patchedMethods: boolean;
+	/** The request middleware is only added at Directus start (init 'middlewares.after'), not on an extension reload. */
+	middlewareRegistered: boolean;
 	index: TagIndex;
 	writeContext: AsyncLocalStorage<WriteContext>;
 	requestContext: AsyncLocalStorage<RequestContext>;
@@ -118,6 +120,7 @@ export function runtime(): Runtime {
 		cache: null,
 		originals: null,
 		patchedMethods: false,
+		middlewareRegistered: false,
 		index: new TagIndex(),
 		writeContext: new AsyncLocalStorage<WriteContext>(),
 		requestContext: new AsyncLocalStorage<RequestContext>(),
@@ -259,7 +262,7 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 		return;
 	}
 
-	if (!rt.config.targeted) {
+	if (!rt.config.targeted || !rt.middlewareRegistered) {
 		return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${verb(ctx.action)} in ${ctx.collection}` });
 	}
 	const wide = clearing.find((touch) => !isTargetable(touch.collection));
@@ -375,6 +378,7 @@ function hasTtlRules(config: RulesConfig): boolean {
 
 /** Express middleware for init('middlewares.after'): runs after Directus' cache check, before the routes. */
 export function requestMiddleware(rt = runtime()) {
+	rt.middlewareRegistered = true;
 	return (req: any, res: any, next: (error?: unknown) => void) => {
 		const isGraphql = String(req.originalUrl ?? '').startsWith('/graphql');
 		if (!rt.cache || (!rt.config.targeted && !hasTtlRules(rt.config)) || (req.method !== 'GET' && !isGraphql)) return next();
@@ -429,7 +433,7 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 	(rt.pruneTimer as any).unref?.();
 
 	await applyRules(config, 'startup');
-	if (problems.length) ctx.logger.warn(`${LOG_PREFIX} clearing rules are limited: ${problems.join('; ')}`);
+	if (problems.length) ctx.logger.warn(`${LOG_PREFIX} granular cache is limited: ${problems.join('; ')}`);
 }
 
 /** Uses new rules. Turning targeted clearing on clears the cache once: older answers are not indexed. */
@@ -447,15 +451,24 @@ function targetedPossible(rt: Runtime): boolean {
 	return !!rt.cache && rt.patchedMethods;
 }
 
-export function runtimeStatus(): RuntimeStatus {
+function toBool(value: unknown): boolean {
+	return value === true || (typeof value === 'string' && ['true', '1', 'yes', 'on'].includes(value.trim().toLowerCase()));
+}
+
+export const RESTART_PROBLEM = 'Granular Cache starts with Directus. Restart Directus once after installing or updating the extension';
+
+/** `env`: the settings object of the caller (the endpoint), so the values match the Status page. */
+export function runtimeStatus(env: Record<string, unknown> = runtime().env): RuntimeStatus {
 	const rt = runtime();
+	const problems = [...rt.problems];
+	if (!rt.handlers || !rt.middlewareRegistered) problems.unshift(RESTART_PROBLEM);
 	return {
-		installed: !!rt.handlers,
-		problems: rt.problems,
-		store: String(rt.env['CACHE_STORE'] ?? 'memory'),
-		cacheEnabled: rt.env['CACHE_ENABLED'] === true,
-		autoPurge: rt.env['CACHE_AUTO_PURGE'] === true,
-		targetedActive: rt.config.targeted,
+		installed: !!rt.handlers && rt.middlewareRegistered,
+		problems,
+		store: String(env['CACHE_STORE'] ?? 'memory'),
+		cacheEnabled: toBool(env['CACHE_ENABLED']),
+		autoPurge: toBool(env['CACHE_AUTO_PURGE']),
+		targetedActive: rt.config.targeted && rt.middlewareRegistered,
 		indexed: rt.index.size,
 		indexedByCollection: rt.index.counts(),
 		since: rt.since,

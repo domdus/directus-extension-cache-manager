@@ -1,5 +1,5 @@
 <template>
-	<private-view title="Clearing Rules" icon="rule">
+	<private-view title="Granular Cache" icon="grain">
 		<template #headline>
 			<v-breadcrumb :items="[{ name: 'Cache Manager', to: '/cache-manager' }]" />
 		</template>

@@ -2,7 +2,7 @@ import { defineModule } from '@directus/extensions-sdk';
 import { EXTENSION_ID } from '../shared/constants';
 import { userHasAdminAccess } from '../shared/admin';
 import OptimizeView from './optimize-view.vue';
-import RulesView from './rules-view.vue';
+import GranularView from './granular-view.vue';
 import SettingsView from './settings-view.vue';
 import StatusView from './status-view.vue';
 
@@ -20,12 +20,17 @@ export default defineModule({
 			component: OptimizeView,
 		},
 		{
-			path: 'rules',
-			component: RulesView,
+			path: 'cache',
+			component: GranularView,
 		},
 		{
 			path: 'settings',
 			component: SettingsView,
+		},
+		{
+			// Earlier name of the Granular Cache page.
+			path: 'rules',
+			redirect: '/cache-manager/cache',
 		},
 		{
 			// Earlier names of the Optimize page.

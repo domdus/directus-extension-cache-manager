@@ -78,7 +78,7 @@
 			<template v-if="analysis">
 				<v-notice v-if="retentionNotice" type="warning" class="notice">{{ retentionNotice }}</v-notice>
 				<v-notice v-if="rulesData?.status.targetedActive" type="info" class="notice">
-					"Only what changed" is on (Clearing Rules). The numbers below count how often a change asks Directus to clear.
+					"Only what changed" is on (Granular Cache). The numbers below count how often a change asks Directus to clear.
 					Each one now clears only the answers that use the changed collection, so ignoring collections matters much less.
 				</v-notice>
 

@@ -278,7 +278,7 @@ async function onImportFile(event: Event) {
 			try {
 				await api.post(`/${EXTENSION_ID}/rules`, rules);
 			} catch (error: any) {
-				throw new Error(`the settings were imported, but not the clearing rules: ${error?.response?.data?.errors?.[0]?.message ?? error?.message}`);
+				throw new Error(`the settings were imported, but not the Granular Cache rules: ${error?.response?.data?.errors?.[0]?.message ?? error?.message}`);
 			}
 		}
 		importMessage.value = {

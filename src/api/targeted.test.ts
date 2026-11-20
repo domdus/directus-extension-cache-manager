@@ -211,6 +211,7 @@ async function setup(config: RulesConfig) {
 	rt.handlers = { clear: (c) => handleClear(rt, c), set: (c, k, v, t) => handleSet(rt, c, k, v, t) };
 	assert.deepEqual(patchItemsService(Items, rt), []);
 	patchCache(cache as any, rt);
+	rt.middlewareRegistered = true;
 	await applyRules(config, 'save');
 	return rt;
 }
@@ -366,4 +367,21 @@ test('lifetime per collection is applied in set() too (Directus before 11.10 ign
 		await (cache as any).set('pages', 'p', 43_200_000);
 	});
 	assert.deepEqual(seen, [3000, 43_200_000]);
+});
+
+test('status: restart needed without the request middleware; targeted then clears everything', async () => {
+	const rt = await setup({ targeted: true, collections: {} });
+	rt.middlewareRegistered = false;
+	const status = runtimeStatus({ CACHE_ENABLED: 'true', CACHE_AUTO_PURGE: true, CACHE_STORE: 'memory' });
+	assert.equal(status.installed, false);
+	assert.equal(status.targetedActive, false);
+	assert.match(status.problems[0]!, /Restart Directus/);
+	assert.equal(status.cacheEnabled, true, 'string "true" counts as on');
+	assert.equal(status.autoPurge, true);
+	const before = cache.clears;
+	await cacheAnswer('a', ['pages']);
+	await new Items('visits').createOne({ page: 1 });
+	assert.equal(cache.clears, before + 1, 'whole cache cleared, never a partial clear without dependency info');
+	rt.middlewareRegistered = true;
+	assert.deepEqual(runtimeStatus({ CACHE_ENABLED: true, CACHE_AUTO_PURGE: true }).problems, []);
 });
