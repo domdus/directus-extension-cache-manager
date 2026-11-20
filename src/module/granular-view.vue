@@ -9,19 +9,25 @@
 		</template>
 
 		<template #actions>
-			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loading" :disabled="saving" @click="load">
+			<v-button v-tooltip.bottom="'Refresh'" rounded icon secondary :loading="loading" :disabled="saving" @click="load">
 				<v-icon name="refresh" />
+			</v-button>
+			<v-button v-tooltip.bottom="'Discard Changes'" rounded icon secondary :disabled="!dirty || saving" @click="discard">
+				<v-icon name="undo" />
+			</v-button>
+			<v-button v-tooltip.bottom="saveText" rounded icon :loading="saving" :disabled="!canSave || loading" @click="save">
+				<v-icon name="check" />
 			</v-button>
 		</template>
 
 		<template #sidebar>
-			<sidebar-detail id="about" icon="info" title="How clearing works" :close="false">
+			<sidebar-detail id="about" icon="info" title="How It Works" :close="false">
 				<p class="sidebar-text">
-					By default, Directus clears its <strong>whole</strong> cache on every change, even when a visit is counted.
+					With Auto Purge on, Directus clears its <strong>whole</strong> cache on every change, even when a visit is counted.
 					Pages and videos that did not change have to be loaded from the database again.
 				</p>
 				<p class="sidebar-text">
-					<strong>Clear only what changed</strong> remembers which collections each cached answer uses. A change then
+					<strong>Granular</strong> remembers which collections each cached answer uses. A change then
 					clears only the answers that use the changed collection, including answers that reach it through relations.
 				</p>
 				<p class="sidebar-text">
@@ -29,17 +35,17 @@
 					can change any answer.
 				</p>
 			</sidebar-detail>
-			<sidebar-detail id="rules" icon="rule" title="Rules per collection">
+			<sidebar-detail id="rules" icon="rule" title="Rules">
 				<p class="sidebar-text">
-					<strong>Clear on</strong>: which changes clear the cache. Turn off "Update" for collections where only new or
+					<strong>Create, Update, Delete</strong>: which changes clear the cache. Turn off "Update" for collections where only new or
 					deleted items matter.
 				</p>
 				<p class="sidebar-text">
-					<strong>Unless only these fields changed</strong>: changes that only touch these fields keep the cache, for
-					example a view counter. A change to any other field still clears.
+					<strong>Skip Fields</strong>: changes that only touch these fields keep the cache, for example a view
+					counter. A change to any other field still clears.
 				</p>
 				<p class="sidebar-text">
-					<strong>Keep answers for</strong>: how long answers that use this collection stay in the cache. An answer that
+					<strong>Lifetime</strong>: how long answers that use this collection stay in the cache. An answer that
 					uses several collections gets the shortest of their times; collections without their own time count with the
 					global one ({{ data?.globalTtl ?? 'CACHE_TTL' }}).
 				</p>
@@ -60,31 +66,32 @@
 					{{ data.status.problems.join('. ') }}. Directus clears the whole cache as usual.
 				</v-notice>
 				<v-notice v-else-if="!data.status.autoPurge" type="info" class="notice">
-					"Clear the cache when content changes" is off on the Status page, so changes don't clear anything. Only the
-					times in "Keep answers for" apply.
+					Auto Purge is off on the <router-link to="/cache-manager">Status</router-link> page, so changes don't clear
+					anything. Only the lifetimes apply.
 				</v-notice>
 				<v-notice v-if="data.status.store !== 'memory' && draft.targeted" type="warning" class="notice">
-					The cache is kept in {{ data.status.store }}. Clearing only what changed works with one Directus process. With
-					several, turn it off.
+					The cache is kept in {{ data.status.store }}. Granular mode works with one Directus process. With several, use
+					Whole Cache.
 				</v-notice>
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="my_location" /></template>
-					What a change clears
+					Mode
 				</v-divider>
+				<p class="explain">Choose what a change clears.</p>
 
 				<div class="choice">
 					<button type="button" class="option" :class="{ active: !draft.targeted }" @click="draft.targeted = false">
 						<v-icon :name="!draft.targeted ? 'radio_button_checked' : 'radio_button_unchecked'" />
 						<span class="option-text">
-							<strong>The whole cache</strong>
-							<span class="subdued">Directus default. Every change clears every cached answer.</span>
+							<strong>Whole Cache</strong>
+							<span class="subdued">How Directus does it. Every change clears every cached answer.</span>
 						</span>
 					</button>
 					<button type="button" class="option" :class="{ active: draft.targeted }" @click="draft.targeted = true">
 						<v-icon :name="draft.targeted ? 'radio_button_checked' : 'radio_button_unchecked'" />
 						<span class="option-text">
-							<strong>Only what changed</strong>
+							<strong>Granular</strong>
 							<span class="subdued">
 								A change clears only the answers that use the changed collection. Everything else stays cached.
 							</span>
@@ -92,16 +99,48 @@
 					</button>
 				</div>
 
+				<div class="summary">
+					<div class="summary-head">
+						<span>Since Start <span class="since">{{ new Date(data.status.since).toLocaleString() }}</span></span>
+						<router-link to="/cache-manager/statistics">Details in Statistics</router-link>
+					</div>
+					<div class="summary-figures">
+						<div class="figure figure--full">
+							<span class="number">{{ formatNumber(data.status.counts.full) }}</span>
+							<span class="what">cleared the whole cache</span>
+						</div>
+						<div class="figure figure--targeted">
+							<span class="number">{{ formatNumber(data.status.counts.targeted) }}</span>
+							<span class="what">cleared only the answers that use the changed collection</span>
+						</div>
+						<div class="figure figure--skipped">
+							<span class="number">{{ formatNumber(data.status.counts.skipped) }}</span>
+							<span class="what">cleared nothing because of a rule</span>
+						</div>
+					</div>
+					<span class="summary-note">{{ summaryNote }}</span>
+				</div>
+
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="rule" /></template>
-					Rules per collection
+					Rules
 				</v-divider>
+				<p class="explain">Change what a collection's changes clear, and how long its answers stay cached.</p>
 
 				<div class="toolbar">
-					<span class="subdued">Collections without a rule clear on every change and use the global time ({{ data.globalTtl }}).</span>
+					<v-notice type="info" class="toolbar-notice">
+						Collections without a rule clear on every change and use the global time ({{ data.globalTtl }}).
+					</v-notice>
 					<div class="add-rule">
 						<v-select :model-value="null" :items="addChoices" :disabled="!addChoices.length" placeholder="Add a rule for…" @update:model-value="onAdd" />
 					</div>
+				</div>
+
+				<div v-if="ruleNames.length > FILTER_FROM" class="filter">
+					<v-input v-model="filter" placeholder="Filter rules by collection or field…" small>
+						<template #prepend><v-icon name="search" small /></template>
+					</v-input>
+					<span class="subdued">{{ shownNames.length }} of {{ ruleNames.length }} rules</span>
 				</div>
 
 				<div v-if="ruleNames.length" class="table-wrap">
@@ -112,19 +151,22 @@
 								<th class="center">Create</th>
 								<th class="center">Update</th>
 								<th class="center">Delete</th>
-								<th>Unless only these fields changed</th>
-								<th>Keep answers for</th>
+								<th v-tooltip="'Changes that only touch these fields keep the cache'">Skip Fields</th>
+								<th v-tooltip="'How long answers that use this collection stay cached'">Lifetime</th>
 								<th class="action-col" />
 							</tr>
 						</thead>
 						<tbody>
-							<tr v-for="name in ruleNames" :key="name">
+							<tr v-if="!shownNames.length">
+								<td colspan="7" class="subdued">No rule matches "{{ filter }}".</td>
+							</tr>
+							<tr v-for="name in shownNames" :key="name">
 								<td>
 									<span class="name">{{ name }}</span>
 									<span class="row-hint">{{ describeRule(draft.collections[name]!) }}</span>
 								</td>
 								<template v-if="ignored.has(name)">
-									<td colspan="4" class="subdued">Ignored on the Optimize page: changes never clear the cache.</td>
+									<td colspan="4" class="subdued">On the Ignore List: changes never clear the cache.</td>
 								</template>
 								<template v-else>
 									<td v-for="action in actions" :key="action" class="center">
@@ -165,71 +207,16 @@
 				</div>
 				<p v-else class="empty subdued">No rules yet.</p>
 
-				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
-					<template #icon><v-icon name="history" /></template>
-					What happened since Directus started
-				</v-divider>
-
-				<div class="tiles">
-					<div class="tile">
-						<span class="label">Whole cache cleared</span>
-						<span class="value">{{ times(data.status.counts.full) }}</span>
-					</div>
-					<div class="tile">
-						<span class="label">Only what changed cleared</span>
-						<span class="value">{{ times(data.status.counts.targeted) }}</span>
-						<span class="explain">{{ formatNumber(data.status.counts.removed) }} {{ data.status.counts.removed === 1 ? 'cached answer' : 'cached answers' }} removed in total.</span>
-					</div>
-					<div class="tile">
-						<span class="label">Kept by a rule</span>
-						<span class="value">{{ formatNumber(data.status.counts.skipped) }} {{ data.status.counts.skipped === 1 ? 'change' : 'changes' }}</span>
-						<span class="explain">Changes that did not clear anything because of a rule.</span>
-					</div>
-				</div>
-				<p v-if="data.status.targetedActive" class="meta">
-					{{ formatNumber(data.status.indexed) }} answers in the cache right now.
-					<template v-if="topCollections.length">Most used: {{ topCollections.join(', ') }}.</template>
-				</p>
-
-				<div v-if="data.status.recent.length" class="table-wrap">
-					<table>
-						<thead>
-							<tr>
-								<th>Time</th>
-								<th>What happened</th>
-								<th>Result</th>
-							</tr>
-						</thead>
-						<tbody>
-							<tr v-for="(event, i) in data.status.recent" :key="i">
-								<td class="time">{{ new Date(event.at).toLocaleTimeString() }}</td>
-								<td>{{ event.reason }}</td>
-								<td>
-									<span class="result" :class="`result--${event.kind}`">{{ resultText(event) }}</span>
-								</td>
-							</tr>
-						</tbody>
-					</table>
-				</div>
-				<p v-else class="empty subdued">Nothing yet. Started {{ new Date(data.status.since).toLocaleString() }}.</p>
-				<p class="meta">Shows the last 50 events. Counted in memory since {{ new Date(data.status.since).toLocaleString() }}.</p>
 			</template>
 
-			<div v-if="data" class="save-bar">
-				<span class="muted" :class="{ danger: invalidTtl.length }">{{ saveText }}</span>
-				<div class="actions-right">
-					<v-button secondary :disabled="!dirty || saving" @click="discard">Discard Changes</v-button>
-					<v-button :loading="saving" :disabled="!canSave || loading" @click="save">Save &amp; Apply</v-button>
-				</div>
-			</div>
 		</div>
 	</private-view>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import ModuleNavigation from './navigation.vue';
-import { useRules, type RulesStatus } from './composables/use-rules';
+import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 import { describeRule } from '../shared/rules';
 import { TTL_ERROR } from '../shared/duration';
@@ -241,22 +228,25 @@ const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, 
 const actions = ['create', 'update', 'delete'] as const;
 
 const ruleNames = computed(() => Object.keys(draft.collections).sort());
+/** The filter shows up once the list gets long. */
+const FILTER_FROM = 5;
+const filter = ref('');
+const shownNames = computed(() => {
+	const term = filter.value.trim().toLowerCase();
+	if (!term || ruleNames.value.length <= FILTER_FROM) return ruleNames.value;
+	return ruleNames.value.filter(
+		(name) => name.toLowerCase().includes(term) || draft.collections[name]!.skipFields.some((field) => field.toLowerCase().includes(term)),
+	);
+});
 const ignored = computed(() => new Set(data.value?.ignoreList ?? []));
 const addChoices = computed(() =>
 	(data.value?.collections ?? [])
 		.filter((entry) => entry.targetable && !draft.collections[entry.name])
 		.map((entry) => ({ text: entry.name, value: entry.name })),
 );
-const topCollections = computed(() =>
-	Object.entries(data.value?.status.indexedByCollection ?? {})
-		.filter(([name]) => name !== '*')
-		.sort((a, b) => b[1] - a[1])
-		.slice(0, 5)
-		.map(([name, count]) => `${name} (${formatNumber(count)})`),
-);
 const saveText = computed(() => {
-	if (invalidTtl.value.length) return `Check the time for ${invalidTtl.value.join(', ')}`;
-	return dirty.value ? 'Unsaved changes' : 'No unsaved changes';
+	if (invalidTtl.value.length) return `Save & Apply · Check the time for ${invalidTtl.value.join(', ')}`;
+	return dirty.value ? 'Save & Apply · Unsaved changes' : 'Save & Apply';
 });
 
 function fieldChoices(collection: string) {
@@ -264,18 +254,28 @@ function fieldChoices(collection: string) {
 	return fields.map((field) => ({ text: field, value: field }));
 }
 
+/** What the numbers mean in the current mode. */
+const summaryNote = computed(() => {
+	const status = data.value?.status;
+	if (!status) return '';
+	if (!status.targetedActive) {
+		return 'Whole Cache mode: every change that clears clears the whole cache.';
+	}
+	if (status.counts.full > 0) {
+		return 'Whole-cache clears now only come from changes that can affect every answer (users, roles, permissions, settings, data model), from a manual clear, or from switching to Granular.';
+	}
+	return 'No change had to clear the whole cache.';
+});
+
 function times(count: number): string {
 	return `${formatNumber(count)} ${count === 1 ? 'time' : 'times'}`;
 }
 
 function onAdd(name: string | null) {
-	if (name) addRule(name);
-}
-
-function resultText(event: RulesStatus['recent'][number]): string {
-	if (event.kind === 'full') return 'Whole cache cleared';
-	if (event.kind === 'skipped') return 'Kept (rule)';
-	return `${formatNumber(event.removed)} ${event.removed === 1 ? 'answer' : 'answers'} cleared`;
+	if (!name) return;
+	addRule(name);
+	// Keep a new rule visible while filtering.
+	if (filter.value && !name.toLowerCase().includes(filter.value.trim().toLowerCase())) filter.value = '';
 }
 
 onMounted(load);
@@ -299,6 +299,10 @@ onMounted(load);
 .notice {
 	margin-bottom: 16px;
 }
+.notice a {
+	color: inherit;
+	text-decoration: underline;
+}
 .loading {
 	display: flex;
 	justify-content: center;
@@ -317,6 +321,81 @@ onMounted(load);
 }
 .meta {
 	margin: 12px 0;
+}
+p.explain {
+	margin: 0 0 16px;
+}
+.since {
+	margin-left: 8px;
+	font-weight: 400;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.filter {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+.filter .v-input {
+	max-width: 360px;
+}
+.summary {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 16px 0 0;
+	padding: 14px 18px;
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	background: var(--theme--background-subdued, var(--background-subdued));
+}
+.summary-head {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	font-weight: 600;
+}
+.summary-head a {
+	font-weight: 400;
+	color: var(--theme--primary, var(--primary));
+}
+.summary-figures {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 16px;
+}
+@media (max-width: 900px) {
+	.summary-figures {
+		grid-template-columns: 1fr;
+	}
+}
+.figure {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	min-width: 0;
+}
+.figure .number {
+	font-size: 24px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.figure--full .number {
+	color: var(--theme--warning, var(--warning));
+}
+.figure--targeted .number {
+	color: var(--theme--success, var(--success));
+}
+.figure--skipped .number {
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.figure .what {
+	line-height: 1.4;
+}
+.summary-note {
+	font-size: 13px;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .empty {
 	margin: 8px 0 0;
@@ -362,6 +441,10 @@ onMounted(load);
 	gap: 12px;
 	flex-wrap: wrap;
 	margin-bottom: 16px;
+}
+.toolbar-notice {
+	flex: 1 1 360px;
+	margin: 0;
 }
 .add-rule {
 	width: 100%;
@@ -420,51 +503,6 @@ td.center :deep(.v-checkbox) {
 	width: 44px;
 	text-align: right;
 }
-.time {
-	white-space: nowrap;
-	font-variant-numeric: tabular-nums;
-}
-.result {
-	white-space: nowrap;
-}
-.result--full {
-	color: var(--theme--warning, var(--warning));
-}
-.result--targeted {
-	color: var(--theme--success, var(--success));
-}
-.result--skipped {
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
-}
-.tiles {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 16px;
-}
-@media (max-width: 1100px) {
-	.tiles {
-		grid-template-columns: 1fr;
-	}
-}
-.tile {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	min-width: 0;
-	padding: 16px 18px;
-	border-radius: var(--theme--border-radius, var(--border-radius));
-	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
-	background: var(--theme--background, var(--background-page));
-}
-.tile .label {
-	font-size: 15px;
-	font-weight: 600;
-}
-.tile .value {
-	font-size: 18px;
-	font-weight: 600;
-	font-variant-numeric: tabular-nums;
-}
 .field-error {
 	display: block;
 	font-size: 12px;
@@ -476,32 +514,5 @@ td.center :deep(.v-checkbox) {
 code {
 	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 0.9em;
-}
-.save-bar {
-	position: sticky;
-	bottom: 0;
-	z-index: 5;
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	justify-content: flex-end;
-	gap: 12px;
-	margin-top: 20px;
-	padding: 12px 0;
-	border-top: var(--theme--border-width, var(--border-width, 1px)) solid var(--theme--border-color-subdued, var(--border-subdued));
-	background: var(--theme--background, var(--background-page));
-}
-.muted {
-	margin-right: auto;
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
-}
-.muted.danger {
-	color: var(--theme--danger, var(--danger));
-}
-.actions-right {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px;
 }
 </style>

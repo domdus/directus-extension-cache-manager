@@ -7,17 +7,24 @@
 			</v-list-item-content>
 		</v-list-item>
 
-		<v-list-item to="/cache-manager/optimize">
-			<v-list-item-icon><v-icon name="speed" /></v-list-item-icon>
-			<v-list-item-content>
-				<v-text-overflow text="Optimize" />
-			</v-list-item-content>
-		</v-list-item>
-
 		<v-list-item to="/cache-manager/cache">
 			<v-list-item-icon><v-icon name="grain" /></v-list-item-icon>
 			<v-list-item-content>
 				<v-text-overflow text="Granular Cache" />
+			</v-list-item-content>
+		</v-list-item>
+
+		<v-list-item to="/cache-manager/ignore-list">
+			<v-list-item-icon><v-icon name="playlist_remove" /></v-list-item-icon>
+			<v-list-item-content>
+				<v-text-overflow text="Ignore List" />
+			</v-list-item-content>
+		</v-list-item>
+
+		<v-list-item to="/cache-manager/statistics">
+			<v-list-item-icon><v-icon name="query_stats" /></v-list-item-icon>
+			<v-list-item-content>
+				<v-text-overflow text="Statistics" />
 			</v-list-item-content>
 		</v-list-item>
 

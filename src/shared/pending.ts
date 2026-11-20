@@ -18,7 +18,7 @@ export function pendingChanges(draft: CacheValues, effective: CacheValues | null
 	return list;
 }
 
-/** Left side of the save bar. */
+/** State text for the save button tooltip. */
 export function saveBarText(count: number, ttlValid: boolean): { text: string; danger: boolean } {
 	if (!ttlValid) return { text: 'Fix the cache lifetime to save', danger: true };
 	if (!count) return { text: 'No unsaved changes', danger: false };

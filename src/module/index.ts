@@ -1,8 +1,9 @@
 import { defineModule } from '@directus/extensions-sdk';
 import { EXTENSION_ID } from '../shared/constants';
 import { userHasAdminAccess } from '../shared/admin';
-import OptimizeView from './optimize-view.vue';
+import IgnoreListView from './ignore-list-view.vue';
 import GranularView from './granular-view.vue';
+import StatisticsView from './statistics-view.vue';
 import SettingsView from './settings-view.vue';
 import StatusView from './status-view.vue';
 
@@ -16,12 +17,16 @@ export default defineModule({
 			component: StatusView,
 		},
 		{
-			path: 'optimize',
-			component: OptimizeView,
+			path: 'ignore-list',
+			component: IgnoreListView,
 		},
 		{
 			path: 'cache',
 			component: GranularView,
+		},
+		{
+			path: 'statistics',
+			component: StatisticsView,
 		},
 		{
 			path: 'settings',
@@ -33,17 +38,21 @@ export default defineModule({
 			redirect: '/cache-manager/cache',
 		},
 		{
-			// Earlier names of the Optimize page.
+			// Earlier names of the Ignore List page.
+			path: 'optimize',
+			redirect: '/cache-manager/ignore-list',
+		},
+		{
 			path: 'clearing',
-			redirect: '/cache-manager/optimize',
+			redirect: '/cache-manager/ignore-list',
 		},
 		{
 			path: 'collections',
-			redirect: '/cache-manager/optimize',
+			redirect: '/cache-manager/ignore-list',
 		},
 		{
 			path: 'analysis',
-			redirect: '/cache-manager/optimize',
+			redirect: '/cache-manager/ignore-list',
 		},
 	],
 	// The endpoint checks admin rights too; this only hides the module for everyone else.

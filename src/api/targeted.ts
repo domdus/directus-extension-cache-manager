@@ -442,7 +442,7 @@ export async function applyRules(config: RulesConfig, origin: 'startup' | 'save'
 	const wasTargeted = rt.config.targeted;
 	rt.config = targetedPossible(rt) ? config : { ...config, targeted: false };
 	if (rt.config.targeted && (!wasTargeted || origin === 'startup') && rt.cache && rt.originals) {
-		await fullClear(rt, rt.cache, { collection: null, action: null, reason: 'Targeted clearing turned on: start with an empty cache' });
+		await fullClear(rt, rt.cache, { collection: null, action: null, reason: origin === 'startup' ? 'Directus started in Granular mode: start with an empty cache' : 'Switched to Granular: start with an empty cache' });
 	}
 	if (!rt.config.targeted) rt.index.clear();
 }

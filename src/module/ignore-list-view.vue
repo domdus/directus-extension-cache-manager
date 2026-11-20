@@ -1,5 +1,5 @@
 <template>
-	<private-view title="Optimize" icon="speed">
+	<private-view title="Ignore List" icon="playlist_remove">
 		<template #headline>
 			<v-breadcrumb :items="[{ name: 'Cache Manager', to: '/cache-manager' }]" />
 		</template>
@@ -9,13 +9,14 @@
 		</template>
 
 		<template #actions>
-			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loadingAnalysis" :disabled="saving" @click="loadAnalysis">
-				<v-icon name="refresh" small />
+			<v-button v-tooltip.bottom="'Refresh'" rounded icon secondary :loading="loadingAnalysis" :disabled="saving" @click="loadAnalysis">
+				<v-icon name="refresh" />
 			</v-button>
+			<save-actions />
 		</template>
 
 		<template #sidebar>
-			<sidebar-detail id="about" icon="info" title="How it counts" :close="false">
+			<sidebar-detail id="about" icon="info" title="Counting" :close="false">
 				<p class="sidebar-text">
 					Directus keeps a copy of its answers, the cache, so it does not have to ask the database every time.
 				</p>
@@ -40,7 +41,7 @@
 					warns you when that is the case.
 				</p>
 			</sidebar-detail>
-			<sidebar-detail id="strategy" icon="lightbulb" title="What to ignore">
+			<sidebar-detail id="strategy" icon="lightbulb" title="What to Ignore">
 				<p class="sidebar-text">
 					Good choices change very often, and nobody needs them up to date to the second: counters, logs, statistics.
 				</p>
@@ -49,7 +50,7 @@
 					Only ignore them if the apps that read them ask for fresh data.
 				</p>
 			</sidebar-detail>
-			<sidebar-detail id="recommendations" icon="recommend" title="How suggestions are made">
+			<sidebar-detail id="recommendations" icon="recommend" title="Suggestions">
 				<p class="sidebar-text">A collection is suggested for ignoring when it</p>
 				<ul class="sidebar-list">
 					<li>changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }} times per hour,</li>
@@ -62,12 +63,15 @@
 		<div :class="pageClass">
 			<v-notice v-if="error" type="danger" class="notice">{{ error }}</v-notice>
 			<v-notice v-if="message" type="success" class="notice">{{ message }}</v-notice>
-			<pending-changes />
 
 			<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 				<template #icon><v-icon name="list_alt" /></template>
-				What clears the cache
+				Overview
 			</v-divider>
+			<p class="explain intro">
+				How often changes cleared the whole cache in the chosen period, and what ignoring collections would change.
+				Changes to ignored collections never clear the cache.
+			</p>
 
 			<div class="toolbar">
 				<v-select v-model="hours" :items="hourItems" inline />
@@ -77,14 +81,18 @@
 
 			<template v-if="analysis">
 				<v-notice v-if="retentionNotice" type="warning" class="notice">{{ retentionNotice }}</v-notice>
-				<v-notice v-if="rulesData?.status.targetedActive" type="info" class="notice">
-					"Only what changed" is on (Granular Cache). The numbers below count how often a change asks Directus to clear.
-					Each one now clears only the answers that use the changed collection, so ignoring collections matters much less.
+				<v-notice v-if="granular" type="info" class="notice">
+					<span>
+						Granular mode is on: a change only clears the answers that use its collection, so you rarely need to ignore
+						collections now. For collections that change often, a rule on
+						<router-link to="/cache-manager/cache">Granular Cache</router-link> is usually the better choice. The numbers
+						below show how often the whole cache would be cleared without it.
+					</span>
 				</v-notice>
 
 				<div class="tiles">
 					<div class="tile">
-						<span class="label">How often the cache is cleared</span>
+						<span class="label">Cache Clears</span>
 						<div class="figure">
 							<span class="value">{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
 							<span class="unit">times per hour</span>
@@ -97,7 +105,7 @@
 					</div>
 
 					<div class="tile" :class="{ changed: dirty }">
-						<span class="label">Your changes</span>
+						<span class="label">Your Changes</span>
 						<template v-if="dirty">
 							<span class="text">Ignoring your choice:</span>
 							<div class="figure">
@@ -113,7 +121,18 @@
 
 					<div class="tile">
 						<span class="label">Suggestion</span>
-						<template v-if="analysis.recommendedList.length">
+						<template v-if="granular">
+							<span class="explain">
+								No ignore suggestions in granular mode, they assume that every change clears the whole cache.
+								<template v-if="analysis.recommendedList.length">
+									These collections change often: {{ analysis.recommendedList.join(', ') }}. Consider a rule for them.
+								</template>
+							</span>
+							<div>
+								<v-button small secondary to="/cache-manager/cache">Open Granular Cache</v-button>
+							</div>
+						</template>
+						<template v-else-if="analysis.recommendedList.length">
 							<div class="figure">
 								<span class="value">{{ formatTimesPerHour(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}</span>
 								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
@@ -166,8 +185,9 @@
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="schedule" /></template>
-					Changes in {{ formatPeriod(analysis.hours) }}
+					Changes
 				</v-divider>
+				<p class="explain intro">Changes per collection in {{ formatPeriod(analysis.hours) }}, the busiest first.</p>
 
 				<div class="table-wrap">
 				<table class="analysis">
@@ -221,6 +241,14 @@
 								>
 									Turn on tracking
 								</v-button>
+								<router-link
+									v-else-if="row.recommended && granular"
+									v-tooltip="'Changes often. Add a rule on Granular Cache, for example skip fields like counters or set a lifetime.'"
+									class="badge badge--link"
+									to="/cache-manager/cache"
+								>
+									Try a rule
+								</router-link>
 								<span
 									v-else-if="row.recommended"
 									v-tooltip="suggestionTooltip(row.collection, state?.effective.ttl ?? '')"
@@ -247,7 +275,6 @@
 				</p>
 			</template>
 
-			<save-bar />
 		</div>
 	</private-view>
 </template>
@@ -268,8 +295,7 @@ import {
 	formatWindow,
 } from '../shared/format';
 import ModuleNavigation from './navigation.vue';
-import PendingChanges from './pending-changes.vue';
-import SaveBar from './save-bar.vue';
+import SaveActions from './save-actions.vue';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
@@ -363,6 +389,8 @@ function addOther(name: string | null) {
 watch(hours, loadAnalysis);
 
 const { data: rulesData, load: loadRules } = useRules();
+/** Granular mode: a change only clears its own answers, so ignore suggestions don't apply. */
+const granular = computed(() => !!rulesData.value?.status.targetedActive);
 
 onMounted(async () => {
 	loadRules();
@@ -571,6 +599,18 @@ th {
 	background: var(--theme--primary, var(--primary));
 	color: var(--theme--foreground-inverted, var(--foreground-inverted, #fff));
 	font-size: 12px;
+}
+.badge--link {
+	text-decoration: none;
+}
+.intro {
+	margin: 0 0 16px;
+	line-height: 1.55;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.notice a {
+	color: inherit;
+	text-decoration: underline;
 }
 .badge--warning {
 	background: var(--theme--warning, var(--warning));

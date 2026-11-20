@@ -79,7 +79,7 @@
 				:style="{ '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' }"
 			>
 				<template #icon><v-icon name="delete" /></template>
-				Remove extension data
+				Remove Extension Data
 			</v-divider>
 
 			<p class="explain">
@@ -96,7 +96,7 @@
 				<v-notice :type="result.type">{{ result.text }}</v-notice>
 			</div>
 
-			<v-button kind="danger" :loading="cleaning" :disabled="!state || busy" @click="runCleanup">Remove extension data</v-button>
+			<v-button kind="danger" :loading="cleaning" :disabled="!state || busy" @click="runCleanup">Remove Extension Data</v-button>
 		</div>
 	</private-view>
 </template>

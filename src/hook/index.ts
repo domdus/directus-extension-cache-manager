@@ -32,7 +32,7 @@ export default defineHook(({ init }, context) => {
 		// The rules work right away; the request middleware (which collections an answer uses) needs a restart.
 		void installRules();
 		if (!runtime().middlewareRegistered) {
-			ctx.logger.warn(`${LOG_PREFIX} extension reloaded without a restart: restart Directus to use "Only what changed"`);
+			ctx.logger.warn(`${LOG_PREFIX} extension reloaded without a restart: restart Directus to use Granular mode`);
 		}
 	}
 

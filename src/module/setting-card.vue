@@ -2,9 +2,11 @@
 	<article class="setting-card">
 		<div class="card-titles">
 			<strong>{{ title }}</strong>
+			<span v-if="description" class="description">{{ description }}</span>
 			<span class="env-name">{{ env }}</span>
 		</div>
 
+		<div class="state-row" :class="{ 'with-control': !!$slots.control }">
 		<div class="in-effect">
 			<span class="caption">In use now</span>
 			<div v-if="Array.isArray(effective)" class="chips">
@@ -24,6 +26,11 @@
 				<span class="legend-dot" />
 				{{ addedCount === 1 ? '1 entry is' : `${addedCount} entries are` }} only saved here, not in the configuration.
 			</span>
+		</div>
+		<!-- A small control (e.g. a checkbox) in the same row as the value. -->
+		<div v-if="$slots.control" class="control">
+			<slot name="control" />
+		</div>
 		</div>
 
 		<div v-if="$slots.edit" class="edit">
@@ -54,13 +61,15 @@ import { computed } from 'vue';
 const props = withDefaults(
 	defineProps<{
 		title: string;
+		/** One sentence under the title: what the setting does. */
+		description?: string;
 		env: string;
 		effective: Value;
 		configured?: Value | null;
 		override?: Value | null;
 		readonly?: boolean;
 	}>(),
-	{ configured: null, override: null, readonly: false },
+	{ description: '', configured: null, override: null, readonly: false },
 );
 
 const configuredSet = computed(() => new Set(Array.isArray(props.configured) ? props.configured : []));
@@ -102,11 +111,33 @@ function text(value: Value | null | undefined): string {
 	font-size: 15px;
 	letter-spacing: 0.01em;
 }
+.description {
+	line-height: 1.45;
+	color: var(--theme--foreground, var(--foreground-normal));
+}
 .env-name {
 	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 12px;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	overflow-wrap: anywhere;
+}
+.state-row {
+	display: flex;
+	align-items: flex-end;
+	gap: 32px;
+	flex-wrap: wrap;
+}
+.state-row > .in-effect {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.state-row.with-control > .in-effect {
+	flex: 0 1 auto;
+}
+.control {
+	display: flex;
+	align-items: center;
+	min-height: 27px;
 }
 .in-effect {
 	display: flex;

@@ -8,6 +8,10 @@
 			<module-navigation />
 		</template>
 
+		<template #actions>
+			<save-actions />
+		</template>
+
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="About" :close="false">
 				<p class="sidebar-text">
@@ -22,25 +26,24 @@
 				</p>
 				<p class="sidebar-text">If Directus runs on several servers, restart the other servers after saving.</p>
 			</sidebar-detail>
-			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Clear the cache when content changes">
+			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Auto Purge">
 				<p class="sidebar-text">
 					<strong>On:</strong> a change to a collection that is not ignored clears the whole cache. Everyone sees the
 					change right away.
 				</p>
 				<p class="sidebar-text">
-					<strong>Off:</strong> changes only show up when the cached copy expires (see "How long answers stay in the
-					cache"). Editors may wait that long to see their changes.
+					<strong>Off:</strong> changes only show up when the cached copy expires (see Cache Lifetime). Editors may wait that long to see their changes.
 				</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on.</p>
 			</sidebar-detail>
-			<sidebar-detail id="skip-allowed" icon="bolt" title="Allow apps to skip the cache">
+			<sidebar-detail id="skip-allowed" icon="bolt" title="Skip Cache">
 				<p class="sidebar-text">
 					<strong>On:</strong> an app can ask for fresh data. It sends the header <code>Cache-Control: no-store</code>.
 				</p>
 				<p class="sidebar-text">Apps need this to read ignored collections up to date.</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on, if your Directus is not open to the public.</p>
 			</sidebar-detail>
-			<sidebar-detail id="ttl" icon="schedule" title="How long answers stay in the cache">
+			<sidebar-detail id="ttl" icon="schedule" title="Cache Lifetime">
 				<p class="sidebar-text">
 					Write a duration like 5m (minutes), 1h (hours) or 1d (days). At most 30 days.
 				</p>
@@ -69,39 +72,59 @@
 				<v-notice v-if="!state.inSync" type="warning" class="notice">
 					The settings in use differ from what is configured and saved here. Save again or restart Directus.
 				</v-notice>
-				<pending-changes />
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="tune" /></template>
-					Current settings
+					Current Settings
 				</v-divider>
+				<p class="explain">
+					The cache settings Directus uses right now. What you save here applies at once, without a restart.
+				</p>
 
 				<div class="cards">
 					<setting-card
-						title="Clear the cache when content changes"
+						title="Auto Purge"
+						description="Clear the cache when content changes."
 						env="CACHE_AUTO_PURGE"
 						:effective="onOff(state.effective.autoPurge)"
 						:configured="onOff(state.baseline.autoPurge)"
 						:override="state.stored?.autoPurge == null ? null : onOff(state.stored.autoPurge)"
-					/>
+					>
+						<template #control>
+							<v-checkbox v-model="draft.autoPurge" label="Enabled" />
+						</template>
+						<template #edit>
+							<span class="field-hint">
+								Off: changes only show up when cached answers expire. <router-link to="/cache-manager/cache">Granular Cache</router-link>
+								decides how much a change clears.
+							</span>
+						</template>
+					</setting-card>
 					<setting-card
-						title="Allow apps to skip the cache"
+						title="Skip Cache"
+						description="Let apps ask for fresh data with the header Cache-Control: no-store."
 						env="CACHE_SKIP_ALLOWED"
 						:effective="onOff(state.effective.skipAllowed)"
 						:configured="onOff(state.baseline.skipAllowed)"
 						:override="state.stored?.skipAllowed == null ? null : onOff(state.stored.skipAllowed)"
-					/>
+					>
+						<template #control>
+							<v-checkbox v-model="draft.skipAllowed" label="Enabled" />
+						</template>
+					</setting-card>
 					<setting-card
-						title="Ignored collections"
+						title="Ignored Collections"
+						description="Changes to these collections don't clear the cache."
 						env="CACHE_AUTO_PURGE_IGNORE_LIST"
 						:effective="state.effective.ignoreList"
 						:configured="state.baseline.ignoreList"
 						:override="state.stored?.ignoreList ?? null"
 					>
-						<v-button small secondary to="/cache-manager/optimize">Choose ignored collections</v-button>
+						<v-button small secondary to="/cache-manager/ignore-list">Edit Ignore List</v-button>
 					</setting-card>
 					<setting-card
-						title="How long answers stay in the cache"
+						title="Cache Lifetime"
+						description="How long answers stay in the cache."
 						env="CACHE_TTL"
 						:effective="state.effective.ttl"
 						:configured="state.baseline.ttl"
@@ -116,7 +139,7 @@
 							</span>
 						</template>
 					</setting-card>
-					<setting-card title="Where the cache is kept" env="CACHE_STORE" :effective="String(state.env.CACHE_STORE ?? '–')" readonly />
+					<setting-card title="Cache Store" description="Where the cache is kept." env="CACHE_STORE" :effective="String(state.env.CACHE_STORE ?? '–')" readonly />
 				</div>
 				<p class="meta">
 					<template v-if="state.configPath">Config file: <code>{{ state.configPath }}</code>. </template>
@@ -126,23 +149,8 @@
 				<div v-if="state.stored" class="reset-row">
 					<v-button secondary :disabled="busy" @click="reset">Reset to Configured Values</v-button>
 				</div>
-
-				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
-					<template #icon><v-icon name="cached" /></template>
-					When the cache is cleared
-				</v-divider>
-
-				<div class="toggles">
-					<v-checkbox v-model="draft.autoPurge" block>
-						<span class="check-label">Clear the cache when content changes <span class="env-name">CACHE_AUTO_PURGE</span></span>
-					</v-checkbox>
-					<v-checkbox v-model="draft.skipAllowed" block>
-						<span class="check-label">Allow apps to skip the cache <span class="env-name">CACHE_SKIP_ALLOWED</span></span>
-					</v-checkbox>
-				</div>
 			</template>
 
-			<save-bar />
 		</div>
 	</private-view>
 </template>
@@ -150,8 +158,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
-import PendingChanges from './pending-changes.vue';
-import SaveBar from './save-bar.vue';
+import SaveActions from './save-actions.vue';
 import SettingCard from './setting-card.vue';
 import { TTL_ERROR } from '../shared/duration';
 import { useCacheManager } from './composables/use-cache-manager';
@@ -183,6 +190,11 @@ onMounted(() => loadState(true));
 .section-divider.add-margin-top {
 	margin-top: 40px;
 }
+.explain {
+	margin: 0 0 16px;
+	line-height: 1.55;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
 .notice {
 	margin-bottom: 16px;
 }
@@ -210,16 +222,6 @@ onMounted(() => loadState(true));
 .meta a {
 	color: var(--theme--primary, var(--primary));
 }
-.toggles {
-	display: grid;
-	gap: 12px;
-	max-inline-size: 36rem;
-}
-.env-name {
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
-	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
-	font-size: 12px;
-}
 .cards {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -230,16 +232,12 @@ onMounted(() => loadState(true));
 		grid-template-columns: 1fr;
 	}
 }
-.env-name.block {
-	display: block;
-	margin-top: 4px;
-}
-.check-label .env-name {
-	margin-left: 8px;
-}
 .field-error {
 	font-size: 12px;
 	color: var(--theme--danger, var(--danger));
+}
+.field-hint a {
+	color: var(--theme--primary, var(--primary));
 }
 .field-hint {
 	font-size: 12px;
