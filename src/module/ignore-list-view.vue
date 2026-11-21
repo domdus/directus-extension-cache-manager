@@ -73,10 +73,6 @@
 				Changes to ignored collections never clear the cache.
 			</p>
 
-			<div class="toolbar">
-				<v-select v-model="hours" :items="hourItems" inline />
-			</div>
-
 			<div v-if="!analysis && loadingAnalysis" class="loading"><v-progress-circular indeterminate /></div>
 
 			<template v-if="analysis">
@@ -90,77 +86,94 @@
 					</span>
 				</v-notice>
 
-				<div class="tiles">
-					<div class="tile">
-						<span class="label">Cache Clears</span>
-						<div class="figure">
-							<span class="value">{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
-							<span class="unit">times per hour</span>
+				<div class="summary-row">
+					<section class="summary-bar" aria-label="Cache clear rates">
+						<div class="stat">
+							<span class="stat-value">{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}/h</span>
+							<span class="stat-label">
+								Cache Clears
+								<v-icon
+									v-tooltip.top="clearsTooltip"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
 						</div>
-						<span v-if="notMeasuredLine" class="unit">{{ notMeasuredLine }}</span>
-						<span class="explain">
-							The cache was cleared {{ formatTimes(analysis.purgeMinutes, analysis.windowMinutes) }}.
-							Lower is better: after clearing, Directus has to load everything from the database again.
+						<div class="stat" :class="{ changed: dirty }">
+							<span class="stat-value">{{ dirty ? `${formatTimesPerHour(whatIf, analysis.windowMinutes)}/h` : '—' }}</span>
+							<span class="stat-label">
+								Your Changes
+								<v-icon
+									v-tooltip.top="changesTooltip"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+						<div class="stat">
+							<span class="stat-value">{{ suggestionRate }}</span>
+							<span class="stat-label">
+								Suggested
+								<v-icon
+									v-tooltip.top="suggestionRateTooltip"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+					</section>
+					<v-select v-model="hours" class="period" :items="hourItems" inline />
+				</div>
+				<p v-if="notMeasuredLine" class="caption">{{ notMeasuredLine }}</p>
+
+				<div v-if="granular && analysis.recommendedList.length" class="suggest-row">
+					<div class="suggest-copy">
+						<div class="suggest-head">
+							<strong>These collections change often</strong>
+							<div class="suggest-chips">
+								<v-chip v-for="name in analysis.recommendedList" :key="name" small>{{ name }}</v-chip>
+							</div>
+						</div>
+						<span>Consider a rule for them on Granular Cache.</span>
+					</div>
+					<v-button small secondary to="/cache-manager/cache">Open Granular Cache</v-button>
+				</div>
+				<div v-else-if="!granular && analysis.recommendedList.length" class="suggest-row">
+					<div class="suggest-copy">
+						<div class="suggest-head">
+							<strong>
+								{{ analysis.recommendedList.length === 1 ? 'Ignore this collection' : 'Ignore these collections' }}
+							</strong>
+							<div class="suggest-chips">
+								<v-chip
+									v-for="name in analysis.recommendedList"
+									:key="name"
+									small
+									:class="{ 'chip-warning': looksSensitive(name) }"
+								>
+									{{ name }}
+								</v-chip>
+							</div>
+						</div>
+						<span>
+							{{ formatTimesPerHour(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}/h instead of
+							{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}/h
+						</span>
+						<span v-if="sensitiveRecommendations.length" class="warning-text">
+							Check apps first: the name suggests they decide on it (access, payments, purchases).
 						</span>
 					</div>
-
-					<div class="tile" :class="{ changed: dirty }">
-						<span class="label">Your Changes</span>
-						<template v-if="dirty">
-							<span class="text">Ignoring your choice:</span>
-							<div class="figure">
-								<span class="value">{{ formatTimesPerHour(whatIf, analysis.windowMinutes) }}</span>
-								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
-							</div>
-							<span class="explain">
-								The cache would have been cleared {{ formatTimes(whatIf, analysis.windowMinutes) }}. Lower is better.
-							</span>
-						</template>
-						<span v-else class="explain">No changes yet. Select collections in the table and click Ignore selected to see the effect here.</span>
-					</div>
-
-					<div class="tile">
-						<span class="label">Suggestion</span>
-						<template v-if="granular">
-							<span class="explain">
-								No ignore suggestions in granular mode, they assume that every change clears the whole cache.
-								<template v-if="analysis.recommendedList.length">
-									These collections change often: {{ analysis.recommendedList.join(', ') }}. Consider a rule for them.
-								</template>
-							</span>
-							<div>
-								<v-button small secondary to="/cache-manager/cache">Open Granular Cache</v-button>
-							</div>
-						</template>
-						<template v-else-if="analysis.recommendedList.length">
-							<div class="figure">
-								<span class="value">{{ formatTimesPerHour(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}</span>
-								<span class="unit">times per hour instead of {{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}</span>
-							</div>
-							<span class="text">
-								{{ analysis.recommendedList.length === 1 ? 'Ignore this collection' : 'Ignore these collections' }}:
-								{{ analysis.recommendedList.join(', ') }}.
-							</span>
-							<span class="explain">
-								The cache would have been cleared
-								{{ formatTimes(analysis.recommendedPurgeMinutes, analysis.windowMinutes) }}. Lower is better.
-							</span>
-							<div>
-								<v-button small :secondary="!addableRecommendations.length" :disabled="!addableRecommendations.length" @click="add(addableRecommendations)">
-									{{ addableRecommendations.length ? 'Apply suggested' : 'Added to your changes' }}
-								</v-button>
-							</div>
-							<span v-if="sensitiveRecommendations.length" class="explain warning-text">
-								Check {{ sensitiveRecommendations.join(', ') }} first: the name suggests apps decide on it (access, payments,
-								purchases). Only ignore it after those apps read it with <code>Cache-Control: no-store</code>.
-							</span>
-							<span class="explain">
-								Only do this if no app needs these entries to be up to date right away. Ignored collections can be up to
-								{{ state?.effective.ttl || 'the cache lifetime' }} old.
-							</span>
-						</template>
-						<span v-else class="explain">No suggestion. No collection changes often enough to matter.</span>
-					</div>
+					<v-button
+						small
+						:secondary="!addableRecommendations.length"
+						:disabled="!addableRecommendations.length"
+						@click="add(addableRecommendations)"
+					>
+						{{ addableRecommendations.length ? 'Apply suggested' : 'Added to your changes' }}
+					</v-button>
 				</div>
 
 				<div class="toolbar">
@@ -183,7 +196,7 @@
 					</div>
 				</div>
 
-				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
+				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="schedule" /></template>
 					Changes
 				</v-divider>
@@ -373,6 +386,34 @@ watch(analysis, () => {
 const notMeasuredTooltip = "Activity tracking is off for this collection, so its changes can't be counted. They can still clear the cache.";
 
 const addableRecommendations = computed(() => (analysis.value?.recommendedList ?? []).filter((name) => !draftSet.value.has(name)));
+
+const suggestionRate = computed(() => {
+	const current = analysis.value;
+	if (!current || granular.value || !current.recommendedList.length) return '—';
+	return `${formatTimesPerHour(current.recommendedPurgeMinutes, current.windowMinutes)}/h`;
+});
+
+const clearsTooltip = computed(() => {
+	const current = analysis.value;
+	if (!current) return '';
+	return `${formatTimes(current.purgeMinutes, current.windowMinutes)}. Lower is better: after clearing, Directus has to load everything from the database again.`;
+});
+
+const changesTooltip = computed(() => {
+	const current = analysis.value;
+	if (!current) return '';
+	if (!dirty.value) return 'Select collections in the table and click Ignore selected to see the effect here.';
+	return `With your selection the cache would have been cleared ${formatTimes(whatIf.value, current.windowMinutes)}. Lower is better.`;
+});
+
+const suggestionRateTooltip = computed(() => {
+	const current = analysis.value;
+	if (!current) return '';
+	if (granular.value) return 'Ignore suggestions assume that every change clears the whole cache.';
+	if (!current.recommendedList.length) return 'No collection changes often enough to matter.';
+	const ttl = state.value?.effective.ttl || 'the cache lifetime';
+	return `Would have been cleared ${formatTimes(current.recommendedPurgeMinutes, current.windowMinutes)}. Ignored collections can be up to ${ttl} old.`;
+});
 const otherCollections = computed(() => {
 	const shown = new Set(rows.value.map((row) => row.collection));
 	return (state.value?.collections ?? []).filter((name) => !shown.has(name));
@@ -402,6 +443,9 @@ onMounted(async () => {
 <style scoped>
 .section-divider {
 	margin-bottom: 12px;
+}
+.section-divider.add-margin-top {
+	margin-top: 24px;
 }
 .page-container {
 	padding: var(--content-padding);
@@ -437,63 +481,114 @@ onMounted(async () => {
 	flex-wrap: wrap;
 	margin-bottom: 16px;
 }
-.toolbar--end {
-	justify-content: flex-end;
-}
 .add-other {
-	width: 100%;
+	flex: 1 1 14rem;
 	max-width: 320px;
+	min-width: 12rem;
 }
-.tiles {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 16px;
-	margin-bottom: 24px;
-}
-@media (max-width: 1100px) {
-	.tiles {
-		grid-template-columns: 1fr;
-	}
-}
-.tile {
+.summary-row {
 	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	min-width: 0;
-	padding: 16px 18px;
-	border-radius: var(--theme--border-radius, var(--border-radius));
-	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
-	background: var(--theme--background, var(--background-page));
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
 }
-.tile.changed {
+.summary-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	flex: 1 1 20rem;
+	min-width: 0;
+}
+.stat {
+	display: inline-flex;
+	flex: 1 1 auto;
+	align-items: baseline;
+	gap: 0.4rem;
+	min-inline-size: max-content;
+	padding: 0.4rem 0.7rem;
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	background: var(--theme--background-subdued, var(--background-subdued));
+	white-space: nowrap;
+}
+.stat.changed {
 	border-color: var(--theme--primary, var(--primary));
 }
-.tile.empty .explain {
-	font-style: italic;
+.stat-value {
+	font-size: 0.9rem;
+	font-weight: 700;
+	line-height: 1.3;
+	color: var(--theme--foreground, var(--foreground-normal));
+	font-variant-numeric: tabular-nums;
 }
-.tile .label {
-	font-size: 15px;
+.stat-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 0.8rem;
 	font-weight: 600;
-	letter-spacing: 0.01em;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
-.tile .figure {
+.stat-info {
+	--v-icon-color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	cursor: pointer;
+	flex-shrink: 0;
+}
+.period {
+	width: 12.5rem;
+	flex: none;
+}
+.caption {
+	margin: 0 0 16px;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.suggest-row {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	flex-wrap: wrap;
+	margin-bottom: 16px;
+	padding: 12px 16px;
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color, var(--border-normal));
+	background: var(--theme--background, var(--background-page));
+}
+.suggest-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+	flex: 1;
+}
+.suggest-head {
+	display: flex;
+	align-items: center;
 	gap: 8px;
 	flex-wrap: wrap;
 }
-.tile .unit {
+.suggest-copy strong {
+	font-size: 13px;
+}
+.suggest-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.suggest-chips .chip-warning {
+	--v-chip-color: var(--theme--warning, var(--warning));
+	--v-chip-background-color: var(--theme--warning-background, var(--warning-alt));
+	--v-chip-color-hover: var(--theme--warning, var(--warning));
+	--v-chip-background-color-hover: var(--theme--warning-subdued, var(--warning-alt));
+}
+.suggest-copy span {
+	font-size: 12px;
+	line-height: 1.45;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
-.tile .value {
-	font-size: 18px;
-	font-weight: 600;
-	font-variant-numeric: tabular-nums;
-}
-.tile .text {
-	line-height: 1.5;
-}
-.tile .explain,
 .subdued,
 .meta {
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
@@ -523,7 +618,10 @@ tbody tr:last-child td {
 	border-bottom: none;
 }
 th {
-	font-weight: 700;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	background: var(--theme--background-subdued, var(--background-subdued));
 	position: sticky;
 	top: 0;

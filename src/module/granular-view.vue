@@ -104,20 +104,44 @@
 						<span>Since Start <span class="since">{{ new Date(data.status.since).toLocaleString() }}</span></span>
 						<router-link to="/cache-manager/statistics">Details in Statistics</router-link>
 					</div>
-					<div class="summary-figures">
-						<div class="figure figure--full">
-							<span class="number">{{ formatNumber(data.status.counts.full) }}</span>
-							<span class="what">cleared the whole cache</span>
+					<section class="summary-bar" aria-label="Clear counts since start">
+						<div class="stat">
+							<span class="stat-value">{{ formatNumber(data.status.counts.full) }}</span>
+							<span class="stat-label">
+								Whole Cache
+								<v-icon
+									v-tooltip.top="'Changes that cleared every cached answer.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
 						</div>
-						<div class="figure figure--targeted">
-							<span class="number">{{ formatNumber(data.status.counts.targeted) }}</span>
-							<span class="what">cleared only the answers that use the changed collection</span>
+						<div class="stat">
+							<span class="stat-value">{{ formatNumber(data.status.counts.targeted) }}</span>
+							<span class="stat-label">
+								Granular
+								<v-icon
+									v-tooltip.top="'Changes that cleared only the answers that use the changed collection.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
 						</div>
-						<div class="figure figure--skipped">
-							<span class="number">{{ formatNumber(data.status.counts.skipped) }}</span>
-							<span class="what">cleared nothing because of a rule</span>
+						<div class="stat">
+							<span class="stat-value">{{ formatNumber(data.status.counts.skipped) }}</span>
+							<span class="stat-label">
+								Kept by Rule
+								<v-icon
+									v-tooltip.top="'Changes that cleared nothing because of a rule.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
 						</div>
-					</div>
+					</section>
 					<span class="summary-note">{{ summaryNote }}</span>
 				</div>
 
@@ -129,7 +153,7 @@
 
 				<div class="toolbar">
 					<v-notice type="info" class="toolbar-notice">
-						Collections without a rule clear on every change and use the global time ({{ data.globalTtl }}).
+						Collections without a rule clear on every change and use the global TTL ({{ data.globalTtl }}).
 					</v-notice>
 					<div class="add-rule">
 						<v-select :model-value="null" :items="addChoices" :disabled="!addChoices.length" placeholder="Add a rule for…" @update:model-value="onAdd" />
@@ -267,10 +291,6 @@ const summaryNote = computed(() => {
 	return 'No change had to clear the whole cache.';
 });
 
-function times(count: number): string {
-	return `${formatNumber(count)} ${count === 1 ? 'time' : 'times'}`;
-}
-
 function onAdd(name: string | null) {
 	if (!name) return;
 	addRule(name);
@@ -344,10 +364,6 @@ p.explain {
 	flex-direction: column;
 	gap: 10px;
 	margin: 16px 0 0;
-	padding: 14px 18px;
-	border-radius: var(--theme--border-radius, var(--border-radius));
-	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
-	background: var(--theme--background-subdued, var(--background-subdued));
 }
 .summary-head {
 	display: flex;
@@ -360,38 +376,43 @@ p.explain {
 	font-weight: 400;
 	color: var(--theme--primary, var(--primary));
 }
-.summary-figures {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 16px;
-}
-@media (max-width: 900px) {
-	.summary-figures {
-		grid-template-columns: 1fr;
-	}
-}
-.figure {
+.summary-bar {
 	display: flex;
-	align-items: baseline;
-	gap: 10px;
-	min-width: 0;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	inline-size: 100%;
 }
-.figure .number {
-	font-size: 24px;
+.stat {
+	display: inline-flex;
+	flex: 1 1 auto;
+	align-items: baseline;
+	gap: 0.4rem;
+	min-inline-size: max-content;
+	padding: 0.4rem 0.7rem;
+	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	background: var(--theme--background-subdued, var(--background-subdued));
+	white-space: nowrap;
+}
+.stat-value {
+	font-size: 0.9rem;
 	font-weight: 700;
+	line-height: 1.3;
+	color: var(--theme--foreground, var(--foreground-normal));
 	font-variant-numeric: tabular-nums;
 }
-.figure--full .number {
-	color: var(--theme--warning, var(--warning));
-}
-.figure--targeted .number {
-	color: var(--theme--success, var(--success));
-}
-.figure--skipped .number {
+.stat-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 0.8rem;
+	font-weight: 600;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
-.figure .what {
-	line-height: 1.4;
+.stat-info {
+	--v-icon-color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	cursor: pointer;
+	flex-shrink: 0;
 }
 .summary-note {
 	font-size: 13px;
@@ -471,7 +492,10 @@ tbody tr:last-child td {
 	border-bottom: none;
 }
 th {
-	font-weight: 700;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	background: var(--theme--background-subdued, var(--background-subdued));
 }
 th.center,

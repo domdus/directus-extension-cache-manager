@@ -29,7 +29,19 @@ export function selectionChanges(selected: string[], draftIgnored: string[]): { 
  * Names that usually mean apps decide on the data (access, payments, purchases). A guess from the name only:
  * the extension can't see how apps read a collection, so these suggestions get a warning instead of a plain badge.
  */
-const SENSITIVE_NAME = /subscri|payment|purchase|checkout|order|transaction|invoice|entitle|licen[cs]e|access|permission|wallet|balance|credit|billing/i;
+const SENSITIVE_NAME = new RegExp(
+	[
+		// payments and purchases
+		'subscri', 'payment', 'purchase', 'checkout', 'order', 'transaction', 'invoice', 'billing', 'refund', 'voucher',
+		'coupon', 'price', 'pricing', 'cart(?:s|_|$)', 'wallet', 'balance', 'credit',
+		// access and membership
+		'entitle', 'licen[cs]e', 'access', 'permission', 'member', 'premium', 'vip', 'tier', 'quota', 'token', 'session',
+		'consent',
+		// availability
+		'booking', 'reservation', 'ticket', 'stock', 'inventory',
+	].join('|'),
+	'i',
+);
 
 export function looksSensitive(collection: string): boolean {
 	return SENSITIVE_NAME.test(collection);

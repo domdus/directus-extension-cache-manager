@@ -85,61 +85,69 @@
 					<setting-card
 						title="Auto Purge"
 						description="Clear the cache when content changes."
+						hint="Off: changes only show up when cached answers expire. Granular Cache decides how much a change clears."
 						env="CACHE_AUTO_PURGE"
 						:effective="onOff(state.effective.autoPurge)"
 						:configured="onOff(state.baseline.autoPurge)"
 						:override="state.stored?.autoPurge == null ? null : onOff(state.stored.autoPurge)"
 					>
 						<template #control>
-							<v-checkbox v-model="draft.autoPurge" label="Enabled" />
-						</template>
-						<template #edit>
-							<span class="field-hint">
-								Off: changes only show up when cached answers expire. <router-link to="/cache-manager/cache">Granular Cache</router-link>
-								decides how much a change clears.
-							</span>
+							<v-checkbox v-model="draft.autoPurge" aria-label="Enable Auto Purge" />
 						</template>
 					</setting-card>
 					<setting-card
 						title="Skip Cache"
-						description="Let apps ask for fresh data with the header Cache-Control: no-store."
+						description="Let apps request fresh data with no-store."
 						env="CACHE_SKIP_ALLOWED"
 						:effective="onOff(state.effective.skipAllowed)"
 						:configured="onOff(state.baseline.skipAllowed)"
 						:override="state.stored?.skipAllowed == null ? null : onOff(state.stored.skipAllowed)"
 					>
 						<template #control>
-							<v-checkbox v-model="draft.skipAllowed" label="Enabled" />
+							<v-checkbox v-model="draft.skipAllowed" aria-label="Enable Skip Cache" />
 						</template>
-					</setting-card>
-					<setting-card
-						title="Ignored Collections"
-						description="Changes to these collections don't clear the cache."
-						env="CACHE_AUTO_PURGE_IGNORE_LIST"
-						:effective="state.effective.ignoreList"
-						:configured="state.baseline.ignoreList"
-						:override="state.stored?.ignoreList ?? null"
-					>
-						<v-button small secondary to="/cache-manager/ignore-list">Edit Ignore List</v-button>
 					</setting-card>
 					<setting-card
 						title="Cache Lifetime"
 						description="How long answers stay in the cache."
+						hint="Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared."
 						env="CACHE_TTL"
 						:effective="state.effective.ttl"
 						:configured="state.baseline.ttl"
 						:override="state.stored?.ttl ?? null"
 					>
-						<template #edit>
-							<v-input :model-value="draft.ttl" placeholder="e.g. 1h" :class="{ invalid: !ttlValid }" @update:model-value="draft.ttl = $event ?? ''" />
-							<span v-if="!ttlValid" class="field-error">{{ TTL_ERROR }}</span>
-							<span class="field-hint">
-								Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire
-								or the cache is cleared.
-							</span>
+						<template #control>
+							<v-input
+								class="ttl-input"
+								:model-value="draft.ttl"
+								placeholder="e.g. 1h"
+								:class="{ invalid: !ttlValid }"
+								@update:model-value="draft.ttl = $event ?? ''"
+							/>
+						</template>
+						<template v-if="!ttlValid" #edit>
+							<span class="field-error">{{ TTL_ERROR }}</span>
 						</template>
 					</setting-card>
-					<setting-card title="Cache Store" description="Where the cache is kept." env="CACHE_STORE" :effective="String(state.env.CACHE_STORE ?? '–')" readonly />
+					<setting-card
+						title="Cache Store"
+						description="Where the cache is kept."
+						env="CACHE_STORE"
+						:effective="String(state.env.CACHE_STORE ?? '–')"
+						readonly
+					/>
+					<div class="wide">
+						<setting-card
+							title="Ignored Collections"
+							description="Changes to these collections don't clear the cache."
+							env="CACHE_AUTO_PURGE_IGNORE_LIST"
+							:effective="state.effective.ignoreList"
+							:configured="state.baseline.ignoreList"
+							:override="state.stored?.ignoreList ?? null"
+						>
+							<v-button small secondary to="/cache-manager/ignore-list">Edit Ignore List</v-button>
+						</setting-card>
+					</div>
 				</div>
 				<p class="meta">
 					<template v-if="state.configPath">Config file: <code>{{ state.configPath }}</code>. </template>
@@ -227,22 +235,21 @@ onMounted(() => loadState(true));
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 16px;
 }
+.wide {
+	grid-column: 1 / -1;
+	min-width: 0;
+}
 @media (max-width: 900px) {
 	.cards {
 		grid-template-columns: 1fr;
 	}
 }
+.ttl-input {
+	width: 7.5rem;
+}
 .field-error {
 	font-size: 12px;
 	color: var(--theme--danger, var(--danger));
-}
-.field-hint a {
-	color: var(--theme--primary, var(--primary));
-}
-.field-hint {
-	font-size: 12px;
-	line-height: 1.5;
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .invalid {
 	--theme--form--field--input--border-color: var(--theme--danger, var(--danger));

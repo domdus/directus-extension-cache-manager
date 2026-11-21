@@ -49,23 +49,44 @@
 				</v-divider>
 				<p class="explain intro">What changes did since Directus started ({{ new Date(data.status.since).toLocaleString() }}).</p>
 
-				<div class="tiles">
-					<div class="tile">
-						<span class="label">Whole Cache</span>
-						<span class="value">{{ times(data.status.counts.full) }}</span>
-						<span class="explain">Changes that cleared every cached answer.</span>
+				<section class="summary-bar" aria-label="Clear counts">
+					<div class="stat">
+						<span class="stat-value">{{ times(data.status.counts.full) }}</span>
+						<span class="stat-label">
+							Whole Cache
+							<v-icon
+								v-tooltip.top="'Changes that cleared every cached answer.'"
+								name="help_outline"
+								small
+								class="stat-info"
+							/>
+						</span>
 					</div>
-					<div class="tile">
-						<span class="label">Granular</span>
-						<span class="value">{{ times(data.status.counts.targeted) }}</span>
-						<span class="explain">Changes that cleared only the answers using their collection: {{ formatNumber(data.status.counts.removed) }} {{ data.status.counts.removed === 1 ? 'answer' : 'answers' }} in total.</span>
+					<div class="stat">
+						<span class="stat-value">{{ times(data.status.counts.targeted) }}</span>
+						<span class="stat-label">
+							Granular
+							<v-icon
+								v-tooltip.top="`${formatNumber(data.status.counts.removed)} ${data.status.counts.removed === 1 ? 'answer' : 'answers'} cleared in total.`"
+								name="help_outline"
+								small
+								class="stat-info"
+							/>
+						</span>
 					</div>
-					<div class="tile">
-						<span class="label">Kept by Rule</span>
-						<span class="value">{{ formatNumber(data.status.counts.skipped) }} {{ data.status.counts.skipped === 1 ? 'change' : 'changes' }}</span>
-						<span class="explain">Changes that did not clear anything because of a rule.</span>
+					<div class="stat">
+						<span class="stat-value">{{ formatNumber(data.status.counts.skipped) }}</span>
+						<span class="stat-label">
+							Kept by Rule
+							<v-icon
+								v-tooltip.top="'Changes that did not clear anything because of a rule.'"
+								name="help_outline"
+								small
+								class="stat-info"
+							/>
+						</span>
 					</div>
-				</div>
+				</section>
 				<p v-if="data.status.targetedActive" class="meta">
 					{{ formatNumber(data.status.indexed) }} answers in the cache right now.
 					<template v-if="topCollections.length">Most used: {{ topCollections.join(', ') }}.</template>
@@ -77,23 +98,44 @@
 				</v-divider>
 				<template v-if="data.status.size">
 					<p class="explain intro">How much the cache holds in the memory of this Directus process right now.</p>
-					<div class="tiles">
-						<div class="tile">
-							<span class="label">Size</span>
-							<span class="value">{{ formatBytes(data.status.size.bytes) }}</span>
-							<span class="explain">{{ formatNumber(data.status.size.entries) }} {{ data.status.size.entries === 1 ? 'entry' : 'entries' }}. About the size of the stored data; Node.js needs some more memory around it.</span>
+					<section class="summary-bar" aria-label="Cache size">
+						<div class="stat">
+							<span class="stat-value">{{ formatBytes(data.status.size.bytes) }}</span>
+							<span class="stat-label">
+								Size
+								<v-icon
+									v-tooltip.top="`${formatNumber(data.status.size.entries)} ${data.status.size.entries === 1 ? 'entry' : 'entries'}. About the size of the stored data; Node.js needs some more memory around it.`"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
 						</div>
-						<div class="tile">
-							<span class="label">Expired</span>
-							<span class="value">{{ formatBytes(data.status.size.expiredBytes) }}</span>
-							<span class="explain">{{ formatNumber(data.status.size.expired) }} expired {{ data.status.size.expired === 1 ? 'entry' : 'entries' }} waiting. The extension deletes them every minute.</span>
+						<div class="stat">
+							<span class="stat-value">{{ formatBytes(data.status.size.expiredBytes) }}</span>
+							<span class="stat-label">
+								Expired
+								<v-icon
+									v-tooltip.top="`${formatNumber(data.status.size.expired)} expired ${data.status.size.expired === 1 ? 'entry' : 'entries'} waiting. The extension deletes them every minute.`"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
 						</div>
-						<div class="tile">
-							<span class="label">Freed</span>
-							<span class="value">{{ formatBytes(data.status.swept.bytes) }}</span>
-							<span class="explain">{{ formatNumber(data.status.swept.entries) }} expired {{ data.status.swept.entries === 1 ? 'entry' : 'entries' }} deleted since Directus started. Directus itself only deletes an expired entry when someone asks for it again.</span>
+						<div class="stat">
+							<span class="stat-value">{{ formatBytes(data.status.swept.bytes) }}</span>
+							<span class="stat-label">
+								Freed
+								<v-icon
+									v-tooltip.top="`${formatNumber(data.status.swept.entries)} expired ${data.status.swept.entries === 1 ? 'entry' : 'entries'} deleted since Directus started. Directus itself only deletes an expired entry when someone asks for it again.`"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
 						</div>
-					</div>
+					</section>
 					<div v-if="largest.length" class="largest">
 						<span class="label">Largest Collections</span>
 						<p class="explain">Answers that use several collections count for each of them.</p>
@@ -296,34 +338,44 @@ onUnmounted(() => {
 .empty {
 	margin: 8px 0 0;
 }
-.tiles {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 16px;
-}
-@media (max-width: 1100px) {
-	.tiles {
-		grid-template-columns: 1fr;
-	}
-}
-.tile {
+.summary-bar {
 	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	min-width: 0;
-	padding: 16px 18px;
-	border-radius: var(--theme--border-radius, var(--border-radius));
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin: 0 0 1.25rem;
+	inline-size: 100%;
+}
+.stat {
+	display: inline-flex;
+	flex: 1 1 auto;
+	align-items: baseline;
+	gap: 0.4rem;
+	min-inline-size: max-content;
+	padding: 0.4rem 0.7rem;
 	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
-	background: var(--theme--background, var(--background-page));
+	border-radius: var(--theme--border-radius, var(--border-radius));
+	background: var(--theme--background-subdued, var(--background-subdued));
+	white-space: nowrap;
 }
-.tile .label {
-	font-size: 15px;
-	font-weight: 600;
-}
-.tile .value {
-	font-size: 18px;
-	font-weight: 600;
+.stat-value {
+	font-size: 0.9rem;
+	font-weight: 700;
+	line-height: 1.3;
+	color: var(--theme--foreground, var(--foreground-normal));
 	font-variant-numeric: tabular-nums;
+}
+.stat-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.stat-info {
+	--v-icon-color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	cursor: pointer;
+	flex-shrink: 0;
 }
 .table-wrap {
 	overflow: auto;
@@ -346,7 +398,10 @@ tbody tr:last-child td {
 	border-bottom: none;
 }
 th {
-	font-weight: 700;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	background: var(--theme--background-subdued, var(--background-subdued));
 }
 .time {
