@@ -225,7 +225,7 @@ export function describeRule(rule: CollectionRule): string {
 	if (!on.length) parts.push('Never clears');
 	else if (on.length < 3) parts.push(`Clears on ${on.join(' and ')}`);
 	if (rule.update && rule.skipFields.length) parts.push(`keeps the cache when only ${rule.skipFields.join(', ')} ${rule.skipFields.length === 1 ? 'changes' : 'change'}`);
-	if (rule.ttl) parts.push(`answers stay ${formatDurationLabel(rule.ttl)}`);
+	if (rule.ttl) parts.push(`cached for ${formatDurationLabel(rule.ttl)}`);
 	return parts.join(' · ') || 'Default';
 }
 

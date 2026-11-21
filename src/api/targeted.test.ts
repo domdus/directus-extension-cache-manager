@@ -537,3 +537,13 @@ test('reload: a runtime from an older version gets the fields it lacks', async (
 	assert.deepEqual(rt.swept, { entries: 0, bytes: 0 });
 	assert.equal(runtimeStatus(env).history.length, 24);
 });
+
+test('statistics: several whole-cache clears in the same minute count as one minute', async () => {
+	const rt = await setup({ targeted: false, collections: {} });
+	const before = rt.counts.fullMinutes;
+	await (cache as any).clear();
+	await (cache as any).clear();
+	await (cache as any).clear();
+	assert.equal(rt.counts.full >= 3, true);
+	assert.ok(rt.counts.fullMinutes - before <= 1, 'one minute, not three');
+});

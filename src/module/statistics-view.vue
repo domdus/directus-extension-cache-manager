@@ -21,8 +21,8 @@
 					what was cleared. The page refreshes every 15 seconds.
 				</p>
 				<p class="sidebar-text">
-					<strong>Cache Size</strong> counts the memory store directly. Directus keeps an expired answer until someone
-					asks for it again, so answers nobody asks for again would stay in memory. The extension deletes them every
+					<strong>Cache Size</strong> counts the memory store directly. Directus keeps an expired cached response until someone
+					asks for it again, so cached responses nobody asks for again would stay in memory. The extension deletes them every
 					minute. With Redis, Redis removes them itself.
 				</p>
 				<p class="sidebar-text">
@@ -30,7 +30,7 @@
 				</p>
 				<p class="sidebar-text">
 					Directus does not report cache hits and misses. What this page can show is how often the cache is emptied, how
-					much stays in memory, and what share of changes left other answers in place (Granular Cache and never-clear
+					much stays in memory, and what share of changes left other cached responses in place (Granular Cache and never-clear
 					rules).
 				</p>
 				<p class="sidebar-text">
@@ -48,17 +48,17 @@
 				<v-notice v-if="shownProblems.length" type="warning" class="notice">
 					{{ shownProblems.join('. ') }}.
 				</v-notice>
+				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
+					<template #icon><v-icon name="history" /></template>
+					Overview
+				</v-divider>
+				<p class="explain intro">What changes did since Directus started ({{ new Date(data.status.since).toLocaleString() }}).</p>
 				<v-notice v-if="sizeVsClears" type="warning" class="notice">
 					<span>
 						{{ sizeVsClears }}
 						<router-link to="/cache-manager/analysis">Open Analysis</router-link>
 					</span>
 				</v-notice>
-				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
-					<template #icon><v-icon name="history" /></template>
-					Overview
-				</v-divider>
-				<p class="explain intro">What changes did since Directus started ({{ new Date(data.status.since).toLocaleString() }}).</p>
 
 				<section class="summary-bar" aria-label="Clear counts">
 					<div class="stat">
@@ -66,7 +66,7 @@
 						<span class="stat-label">
 							Whole Cache
 							<v-icon
-								v-tooltip.top="'Changes that cleared every cached answer. In Granular mode only changes that can affect every answer do this (users, roles, permissions, settings, data model), plus a manual clear and switching to Granular.'"
+								v-tooltip.top="'Changes that cleared every cached response. In Granular mode only changes that can affect every cached response do this (users, roles, permissions, settings, data model), plus a manual clear and switching to Granular.'"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -78,7 +78,7 @@
 						<span class="stat-label">
 							Granular
 							<v-icon
-								v-tooltip.top="`${formatNumber(data.status.counts.removed)} ${data.status.counts.removed === 1 ? 'answer' : 'answers'} cleared in total.`"
+								v-tooltip.top="`${formatNumber(data.status.counts.removed)} ${data.status.counts.removed === 1 ? 'cached response' : 'cached responses'} cleared in total.`"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -102,7 +102,7 @@
 						<span class="stat-label">
 							Emptied
 							<v-icon
-								v-tooltip.top="'Average time between whole-cache clears since Directus started. If it is shorter than the Cache Lifetime, answers almost never live as long as the lifetime allows.'"
+								v-tooltip.top="'Average time between whole-cache clears since Directus started, counted in minutes like Analysis: several clears in the same minute count once. If it is much shorter than the Cache Lifetime, cached responses almost never live as long as the lifetime allows.'"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -111,7 +111,7 @@
 					</div>
 				</section>
 				<p v-if="data.status.targetedActive" class="meta">
-					{{ formatNumber(data.status.indexed) }} answers in the cache right now.
+					{{ formatNumber(data.status.indexed) }} cached responses right now.
 					<template v-if="topCollections.length">Most used: {{ topCollections.join(', ') }}.</template>
 				</p>
 
@@ -161,7 +161,7 @@
 					</section>
 					<div v-if="largest.length" class="largest">
 						<span class="label">Largest Collections</span>
-						<p class="explain">Answers that use several collections count for each of them.</p>
+						<p class="explain">Cached responses that use several collections count for each of them.</p>
 						<div v-for="row in largest" :key="row.name" class="largest-row">
 							<span class="largest-name">{{ row.name }}</span>
 							<span class="largest-bar"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
@@ -240,12 +240,12 @@ const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, 
 const sizeVsClears = computed(() => {
 	const status = data.value?.status;
 	if (!status?.size) return null;
-	return sizeVsClearsText(status.size.bytes, status.counts.full, status.since);
+	return sizeVsClearsText(status.size.bytes, status.counts.fullMinutes ?? 0, status.since);
 });
 const emptiedEvery = computed(() => {
 	const status = data.value?.status;
 	if (!status) return null;
-	return emptiedEveryLabel(status.counts.full, status.since);
+	return emptiedEveryLabel(status.counts.fullMinutes ?? 0, status.since);
 });
 const peakBytes = computed(() => {
 	const values = (data.value?.status.history ?? []).map((h) => h.bytes).filter((bytes): bytes is number => bytes != null);
@@ -322,7 +322,7 @@ function times(count: number): string {
 function resultText(event: RulesStatus['recent'][number]): string {
 	if (event.kind === 'full') return 'Whole cache cleared';
 	if (event.kind === 'skipped') return 'Kept (rule)';
-	return `${formatNumber(event.removed)} ${event.removed === 1 ? 'answer' : 'answers'} cleared`;
+	return `${formatNumber(event.removed)} ${event.removed === 1 ? 'cached response' : 'cached responses'} cleared`;
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;

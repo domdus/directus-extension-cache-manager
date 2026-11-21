@@ -15,7 +15,7 @@
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="About" :close="false">
 				<p class="sidebar-text">
-					Directus keeps a copy of its answers, the cache, so it does not have to ask the database every time.
+					Directus keeps a copy of its responses, the cache, so it does not have to ask the database every time.
 				</p>
 				<p class="sidebar-text">
 					<strong>Configured</strong> shows the values Directus started with. They come from its configuration: an .env
@@ -73,12 +73,6 @@
 				<v-notice v-if="!state.inSync" type="warning" class="notice">
 					The settings in use differ from what is configured and saved here. Save again or restart Directus.
 				</v-notice>
-				<v-notice v-if="ttlVsPurge" type="warning" class="notice">
-					<span>
-						{{ ttlVsPurge }}
-						<router-link to="/cache-manager/analysis">Open Analysis</router-link>
-					</span>
-				</v-notice>
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="tune" /></template>
@@ -92,7 +86,7 @@
 					<setting-card
 						title="Auto Purge"
 						description="Clear the cache when content changes."
-						hint="Off: changes only show up when cached answers expire. Granular Cache decides how much a change clears."
+						hint="Off: changes only show up when cached responses expire. Granular Cache decides how much a change clears."
 						env="CACHE_AUTO_PURGE"
 						:effective="onOff(state.effective.autoPurge)"
 						:configured="onOff(state.baseline.autoPurge)"
@@ -107,7 +101,7 @@
 					</setting-card>
 					<setting-card
 						title="Skip Cache"
-						description="Let apps request a fresh answer for one request."
+						description="Let apps request a fresh response for one request."
 						:hint="SKIP_CACHE_HINT"
 						env="CACHE_SKIP_ALLOWED"
 						:effective="onOff(state.effective.skipAllowed)"
@@ -120,7 +114,7 @@
 					</setting-card>
 					<setting-card
 						title="Cache Lifetime"
-						description="How long answers stay if nothing clears them first."
+						description="How long cached responses stay if nothing clears them first."
 						hint="Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared. Auto Purge often empties the cache sooner. Analysis shows how often."
 						env="CACHE_TTL"
 						:effective="formatDurationShort(state.effective.ttl)"
@@ -185,34 +179,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import SaveActions from './save-actions.vue';
 import SettingCard from './setting-card.vue';
 import { TTL_ERROR, bareMillisecondsHint, formatDurationShort } from '../shared/duration';
-import { ttlVsClearsText } from '../shared/health';
 import { useCacheManager } from './composables/use-cache-manager';
-import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 
 const pageClass = usePageClass();
 const { state, draft, busy, ttlValid, loadingState, error, message, loadState, reset } = useCacheManager();
-const { data: rulesData, load: loadRules } = useRules();
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
 
-/**
- * Lifetime check from what this process counted since it started (no database query on the home page). Not in
- * Granular mode: there a change keeps the answers it does not touch.
- */
-const ttlVsPurge = computed(() => {
-	const status = rulesData.value?.status;
-	if (!status || status.targetedActive || !state.value?.effective.autoPurge) return null;
-	return ttlVsClearsText(state.value.effective.ttl, status.counts.full, status.since);
-});
 
 /** (i) text of Skip Cache; the tooltip shows the line breaks. */
 const SKIP_CACHE_HINT = [
-	'An app asks for a fresh answer by sending the header Cache-Control: no-store. Directus then skips the cache for that request.',
+	'An app asks for a fresh response by sending the header Cache-Control: no-store. Directus then skips the cache for that request.',
 	'',
 	"Example: fetch('/items/subscriptions', { headers: { 'Cache-Control': 'no-store' } })",
 	'',
@@ -225,7 +207,6 @@ function onOff(value: boolean) {
 
 onMounted(() => {
 	loadState(true);
-	loadRules();
 });
 </script>
 

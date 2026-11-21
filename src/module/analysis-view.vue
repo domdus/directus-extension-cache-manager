@@ -23,7 +23,7 @@
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="Counting" :close="false">
 				<p class="sidebar-text">
-					Directus keeps a copy of its answers, the cache, so it does not have to ask the database every time.
+					Directus keeps a copy of its responses, the cache, so it does not have to ask the database every time.
 				</p>
 				<p class="sidebar-text">
 					A change clears the whole cache, unless the collection's rule never clears or it is on the ignore list in the
@@ -76,7 +76,7 @@
 
 			<!-- Without Auto Purge no change clears the cache, so there is nothing to keep. -->
 			<v-info v-if="autoPurgeOff && !showAnyway" icon="delete_sweep" title="Auto Purge Is Off" center class="blank">
-				Changes don't clear the cache, so there is nothing to analyze. Cached answers only update when they expire
+				Changes don't clear the cache, so there is nothing to analyze. Cached responses only update when they expire
 				({{ ttlText }}). Turn on Auto Purge on the Status page to use this page.
 				<template #append>
 					<div class="blank-actions">
@@ -94,7 +94,7 @@
 			<p class="explain intro">
 				How often changes cleared the whole cache in the chosen period, and what rules that never clear would change.
 				Collections whose rule never clears, and those on the ignore list in the Directus configuration, keep the cache.
-				Cached answers expire {{ ttlText }} if nothing clears them sooner.
+				Cached responses expire {{ ttlText }} if nothing clears them sooner.
 			</p>
 
 			<div v-if="!analysis && loadingAnalysis" class="loading"><v-progress-circular indeterminate /></div>
@@ -110,7 +110,7 @@
 				</v-notice>
 				<v-notice v-if="granular" type="info" class="notice">
 					<span>
-						Granular mode is on: a change only clears the answers that use its collection. The numbers below show how
+						Granular mode is on: a change only clears the cached responses that use its collection. The numbers below show how
 						often the whole cache would be cleared without it. For collections that change often, Skip Fields or a
 						lifetime on <router-link to="/cache-manager/cache">Granular Cache</router-link> may be enough.
 					</span>
@@ -159,6 +159,17 @@
 				</div>
 				<p v-if="notMeasuredLine" class="caption">{{ notMeasuredLine }}</p>
 
+				<template v-if="analysis.recommendedList.length">
+					<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
+						<template #icon><v-icon name="recommend" /></template>
+						Suggestions
+					</v-divider>
+					<p class="explain intro">
+						Collections that change so often that they clear the cache a lot. Applying adds a rule that never clears;
+						you can refine it on <router-link to="/cache-manager/cache">Granular Cache</router-link>, for example with Skip
+						Fields.
+					</p>
+				</template>
 				<div v-if="analysis.recommendedList.length" class="suggest-row">
 					<div class="suggest-copy">
 						<div class="suggest-head">
@@ -181,7 +192,7 @@
 							{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}/h
 						</span>
 						<span v-if="sensitiveRecommendations.length" class="warning-text">
-							Check apps first: the name suggests they decide on it (access, payments, purchases).
+							Check impact: the name suggests apps may rely on it being up to date (access, payments, purchases).
 						</span>
 					</div>
 					<v-button
@@ -278,7 +289,7 @@
 									class="badge"
 									:class="{ 'badge--warning': looksSensitive(row.collection) }"
 								>
-									{{ looksSensitive(row.collection) ? 'Check apps first' : 'Suggested' }}
+									{{ looksSensitive(row.collection) ? 'Check impact' : 'Suggested' }}
 								</span>
 								<span v-else-if="!row.ignored" class="subdued">{{ row.reason }}</span>
 							</td>
@@ -517,7 +528,7 @@ const skipCacheNotice = computed(() => {
 	if (!state.value || state.value.effective.skipAllowed) return null;
 	const neverClear = rulesData.value ? neverClearCollections(rulesData.value.config) : [];
 	if (!(analysis.value?.recommendedList.length) && !neverClear.length) return null;
-	return 'A collection that never clears can serve stale data until the cache lifetime. Apps that need a fresh answer must send Cache-Control: no-store. Skip Cache is off.';
+	return 'A collection that never clears can serve stale data until the cache lifetime. Apps that need a fresh response must send Cache-Control: no-store. Skip Cache is off.';
 });
 
 onMounted(async () => {
@@ -812,5 +823,8 @@ code {
 	display: flex;
 	gap: 12px;
 	justify-content: center;
+}
+.explain a {
+	color: var(--theme--primary, var(--primary));
 }
 </style>

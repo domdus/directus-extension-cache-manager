@@ -68,7 +68,8 @@ export type RuntimeStatus = {
 	indexed: number;
 	indexedByCollection: Record<string, number>;
 	since: string;
-	counts: { full: number; targeted: number; skipped: number; removed: number };
+	/** fullMinutes: minutes with at least one whole-cache clear (counted like Analysis; one save can clear several times). */
+	counts: { full: number; targeted: number; skipped: number; removed: number; fullMinutes: number };
 	recent: ClearEvent[];
 	/** null: the store can't be measured (Redis) or the cache is off. */
 	size: StoreSize | null;
@@ -93,6 +94,7 @@ type Runtime = {
 	problems: string[];
 	since: string;
 	counts: RuntimeStatus['counts'];
+	lastFullMinute: number;
 	recent: ClearEvent[];
 	swept: SweepResult;
 	history: HistoryBucket[];
@@ -170,7 +172,8 @@ function freshRuntime(): Runtime {
 		permissionDeps: null,
 		problems: [],
 		since: new Date().toISOString(),
-		counts: { full: 0, targeted: 0, skipped: 0, removed: 0 },
+		counts: { full: 0, targeted: 0, skipped: 0, removed: 0, fullMinutes: 0 },
+		lastFullMinute: -1,
 		recent: [],
 		swept: { entries: 0, bytes: 0 },
 		history: [],
@@ -214,6 +217,14 @@ function record(rt: Runtime, event: Omit<ClearEvent, 'at'>) {
 	}
 	rt.counts[event.kind]++;
 	rt.counts.removed += event.removed;
+	if (event.kind === 'full') {
+		const minute = Math.floor(Date.now() / 60_000);
+		if (minute !== rt.lastFullMinute) {
+			rt.lastFullMinute = minute;
+			// ?? 0: counts kept from an older version (reload) lack the field.
+			rt.counts.fullMinutes = (rt.counts.fullMinutes ?? 0) + 1;
+		}
+	}
 	rt.recent.unshift({ at: new Date().toISOString(), ...event });
 	if (rt.recent.length > MAX_RECENT) rt.recent.length = MAX_RECENT;
 }
@@ -334,7 +345,7 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 	}
 	const wide = clearing.find((touch) => !isTargetable(touch.collection));
 	if (wide) {
-		return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${wide.collection} can change any answer` });
+		return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${wide.collection} can change any cached response` });
 	}
 	const collections = [...new Set(clearing.map((touch) => touch.collection))];
 	const purged = [...collections, ...bookkeeping.map((touch) => touch.collection)];
@@ -463,7 +474,7 @@ export function requestMiddleware(rt = runtime()) {
 				rt.requestContext.run({ deps, start, ttl }, () => next());
 			},
 			(error) => {
-				rt.logger?.warn(error, `${LOG_PREFIX} could not work out what this answer depends on; it is cleared on every change`);
+				rt.logger?.warn(error, `${LOG_PREFIX} could not work out what this response depends on; it is cleared on every change`);
 				rt.requestContext.run({ deps: new Set([ANY]), start }, () => next());
 			},
 		);
@@ -606,7 +617,7 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		indexed: rt.index.size,
 		indexedByCollection: rt.index.counts(),
 		since: rt.since,
-		counts: { ...rt.counts },
+		counts: { ...rt.counts, fullMinutes: rt.counts.fullMinutes ?? 0 },
 		recent: [...rt.recent],
 		size,
 		swept: { ...rt.swept },

@@ -27,12 +27,12 @@
 					Pages and videos that did not change have to be loaded from the database again.
 				</p>
 				<p class="sidebar-text">
-					<strong>Granular</strong> remembers which collections each cached answer uses. A change then
-					clears only the answers that use the changed collection, including answers that reach it through relations.
+					<strong>Granular</strong> remembers which collections each cached response uses. A change then
+					clears only the cached responses that use the changed collection, including cached responses that reach it through relations.
 				</p>
 				<p class="sidebar-text">
 					Changes to users, roles, permissions, policies, settings or the data model still clear everything, because they
-					can change any answer.
+					can change any cached response.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="rules" icon="rule" title="Rules">
@@ -45,8 +45,8 @@
 					counter. A change to any other field still clears.
 				</p>
 				<p class="sidebar-text">
-					<strong>Lifetime</strong>: how long answers that use this collection stay in the cache. Write 5m, 1h or 1d —
-					a number with no unit is milliseconds. An answer that uses several collections gets the shortest of their
+					<strong>Lifetime</strong>: how long cached responses that use this collection stay in the cache. Write 5m, 1h or 1d —
+					a number with no unit is milliseconds. A cached response that uses several collections gets the shortest of their
 					times; collections without their own time count with the global one
 					({{ data?.globalTtl ? formatDurationLabel(data.globalTtl) : 'CACHE_TTL' }}).
 				</p>
@@ -91,7 +91,7 @@
 						<v-icon :name="!draft.targeted ? 'radio_button_checked' : 'radio_button_unchecked'" />
 						<span class="option-text">
 							<strong>Whole Cache</strong>
-							<span class="subdued">How Directus does it. Every change clears every cached answer.</span>
+							<span class="subdued">How Directus does it. Every change clears every cached response.</span>
 						</span>
 					</button>
 					<button type="button" class="option" :class="{ active: draft.targeted }" @click="draft.targeted = true">
@@ -99,7 +99,7 @@
 						<span class="option-text">
 							<strong>Granular</strong>
 							<span class="subdued">
-								A change clears only the answers that use the changed collection. Everything else stays cached.
+								A change clears only the cached responses that use the changed collection. Everything else stays cached.
 							</span>
 						</span>
 					</button>
@@ -113,7 +113,7 @@
 					<template #icon><v-icon name="rule" /></template>
 					Rules
 				</v-divider>
-				<p class="explain">Change what a collection's changes clear, and how long its answers stay cached.</p>
+				<p class="explain">Change what a collection's changes clear, and how long its responses stay cached.</p>
 
 				<div class="toolbar">
 					<v-notice type="info" class="toolbar-notice">
@@ -140,7 +140,7 @@
 								<th class="center">Update</th>
 								<th class="center">Delete</th>
 								<th class="fields-col" v-tooltip="'Changes that only touch these fields keep the cache'">Skip Fields</th>
-								<th class="ttl-col" v-tooltip="'How long answers that use this collection stay cached. Write 5m, 1h or 1d — a number with no unit is milliseconds.'">Lifetime</th>
+								<th class="ttl-col" v-tooltip="'How long responses that use this collection stay cached. Write 5m, 1h or 1d — a number with no unit is milliseconds.'">Lifetime</th>
 								<th class="action-col" />
 							</tr>
 						</thead>

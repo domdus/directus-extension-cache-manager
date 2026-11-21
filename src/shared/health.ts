@@ -19,9 +19,9 @@ export function ttlVsPurgeText(
 	const rate = formatTimesPerHour(purgeMinutes, windowMinutes);
 	const lifetime = formatDurationLabel(ttl);
 	if (options?.granular) {
-		return `Lifetime is ${lifetime}. In Granular mode, answers a change does not touch can live that long. Without it, changes would empty the whole cache about ${rate} times per hour.`;
+		return `Lifetime is ${lifetime}. In Granular mode, cached responses a change does not touch can live that long. Without it, changes would empty the whole cache about ${rate} times per hour.`;
 	}
-	return `Lifetime is ${lifetime}, but changes empty the cache about ${rate} times per hour. Answers almost never live that long.`;
+	return `Lifetime is ${lifetime}, but changes empty the cache about ${rate} times per hour. Cached responses almost never live that long.`;
 }
 
 /** Average minutes between whole-cache clears since this process started; null without enough data. */
@@ -64,25 +64,7 @@ export function sizeVsClearsText(bytes: number, fullClears: number, sinceIso: st
 	if (!(fullClears >= 20) || !(bytes >= 0) || bytes > 20 * 1024 * 1024) return null;
 	const minutes = minutesBetweenClears(fullClears, sinceIso, now);
 	if (minutes === null || minutes > CONSTANT_CLEAR_MINUTES) return null;
-	return `The whole cache is cleared ${intervalText(minutes)}, so it likely never gets the chance to grow: ${formatBytes(bytes)} now.`;
-}
-
-/**
- * Status: the same lifetime check as ttlVsPurgeText, from the numbers this process counted since it started (no
- * database query). Only in Whole Cache mode: Granular already keeps answers a change does not touch.
- */
-export function ttlVsClearsText(
-	ttl: string | null | undefined,
-	fullClears: number,
-	sinceIso: string,
-	now = Date.now(),
-): string | null {
-	const ttlMs = parseDuration(ttl);
-	if (!ttlMs || ttlMs <= 0 || !(fullClears >= 3)) return null;
-	const started = new Date(sinceIso).getTime();
-	// At least 30 minutes of data, so a restart or a single burst does not trigger it.
-	if (!Number.isFinite(started) || now - started < 30 * 60_000) return null;
-	const minutes = minutesBetweenClears(fullClears, sinceIso, now);
-	if (minutes === null || minutes * 60_000 >= ttlMs / 2) return null;
-	return `Lifetime is ${formatDurationLabel(ttl)}, but since Directus started the whole cache was cleared ${intervalText(minutes)}. Answers almost never live that long.`;
+	// Times per hour, like Analysis (minutes with a whole-cache clear).
+	const rate = formatTimesPerHour(60, minutes * 60);
+	return `Since Directus started, changes emptied the whole cache about ${rate} times per hour, so it likely never gets the chance to grow: ${formatBytes(bytes)} now.`;
 }

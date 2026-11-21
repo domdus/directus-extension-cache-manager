@@ -9,7 +9,7 @@ export function pendingChanges(draft: CacheValues, effective: CacheValues | null
 	if (draft.autoPurge !== effective.autoPurge) list.push(`clear the cache when content changes: ${onOff(draft.autoPurge)}`);
 	if (draft.skipAllowed !== effective.skipAllowed) list.push(`allow apps to skip the cache: ${onOff(draft.skipAllowed)}`);
 	if (!sameDuration(draft.ttl, effective.ttl)) {
-		list.push(`keep answers in the cache for: ${draft.ttl ? formatDurationLabel(draft.ttl) : '(empty)'}`);
+		list.push(`keep responses in the cache for: ${draft.ttl ? formatDurationLabel(draft.ttl) : '(empty)'}`);
 	}
 	return list;
 }

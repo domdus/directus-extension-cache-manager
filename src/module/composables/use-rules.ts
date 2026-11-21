@@ -14,7 +14,7 @@ export type RulesStatus = {
 	indexed: number;
 	indexedByCollection: Record<string, number>;
 	since: string;
-	counts: { full: number; targeted: number; skipped: number; removed: number };
+	counts: { full: number; targeted: number; skipped: number; removed: number; fullMinutes: number };
 	recent: Array<{ at: string; kind: 'full' | 'targeted' | 'skipped'; collection: string | null; action: string | null; removed: number; reason: string }>;
 	/** null: not measurable (Redis) or the cache is off. */
 	size: { entries: number; bytes: number; expired: number; expiredBytes: number } | null;
