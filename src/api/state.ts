@@ -81,7 +81,7 @@ export async function ensureSettingsField(ctx: ApiContext): Promise<boolean> {
 }
 
 /** The stored JSON (override values plus `rules`), parsed; null when empty or unreadable. */
-async function readRaw(database: Knex): Promise<Record<string, unknown> | null> {
+export async function readRaw(database: Knex): Promise<Record<string, unknown> | null> {
 	if (!(await hasSettingsField(database))) return null;
 	const row = await database.select(SETTINGS_FIELD).from('directus_settings').first();
 	let value = row?.[SETTINGS_FIELD];

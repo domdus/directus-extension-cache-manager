@@ -75,9 +75,9 @@
 					Auto Purge is off on the <router-link to="/cache-manager">Status</router-link> page, so changes don't clear
 					anything. Only the lifetimes apply.
 				</v-notice>
-				<v-notice v-if="data.status.store !== 'memory' && draft.targeted" type="warning" class="notice">
-					The cache is kept in {{ data.status.store }}. Granular mode works with one Directus process. With several, use
-					Whole Cache.
+				<v-notice v-if="data.status.store !== 'memory' && !data.status.shared && draft.targeted" type="warning" class="notice">
+					The cache is kept in {{ data.status.store }}, but Cache Manager can't use it to share its notes. Granular mode works
+					with one Directus process here. With several, use Whole Cache.
 				</v-notice>
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">

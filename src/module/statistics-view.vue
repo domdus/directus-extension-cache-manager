@@ -26,7 +26,7 @@
 					minute. With Redis, Redis removes them itself.
 				</p>
 				<p class="sidebar-text">
-					The numbers live in memory. They start at zero when Directus restarts and are counted per process.
+					The numbers live in memory. They start at zero when Directus restarts. With several Directus servers, each counts its own.
 				</p>
 				<p class="sidebar-text">
 					Directus does not report cache hits and misses. What this page can show is how often the cache is emptied, how
@@ -111,7 +111,8 @@
 					</div>
 				</section>
 				<p v-if="data.status.targetedActive" class="meta">
-					{{ formatNumber(data.status.indexed) }} cached responses right now.
+					<template v-if="data.status.indexed >= 0">{{ formatNumber(data.status.indexed) }} cached responses right now.</template>
+					<template v-else>Shared by all Directus servers through Redis.</template>
 					<template v-if="topCollections.length">Most used: {{ topCollections.join(', ') }}.</template>
 				</p>
 

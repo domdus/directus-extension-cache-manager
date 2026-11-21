@@ -19,6 +19,7 @@ import {
 	type ApiContext,
 } from '../api/state';
 import { applyRules, statusWithFreshSize } from '../api/targeted';
+import { rememberSaved } from '../api/sync';
 import { DEFAULT_RULES, describeRules, isTargetable, neverClearCollections, validateRules } from '../shared/rules';
 
 class HttpError extends Error {
@@ -166,6 +167,7 @@ export default defineEndpoint({
 					? null
 					: { ...result.value, updatedAt: new Date().toISOString(), updatedBy: accountability.user };
 				await writeStored(ctx, accountability, stored);
+				await rememberSaved(ctx);
 				const effective = applyEffective(env, stored);
 				logger.info(`${LOG_PREFIX} override saved by ${accountability.user}: ${describe(effective)}`);
 				return state();
@@ -178,6 +180,7 @@ export default defineEndpoint({
 				const accountability = (req as any).accountability;
 				await ensureSettingsField(ctx);
 				await writeStored(ctx, accountability, null);
+				await rememberSaved(ctx);
 				const effective = applyEffective(env, null);
 				logger.info(`${LOG_PREFIX} reset to config by ${accountability.user}: ${describe(effective)}`);
 				return state();
@@ -217,6 +220,7 @@ export default defineEndpoint({
 				const accountability = (req as any).accountability;
 				await ensureSettingsField(ctx);
 				await writeRules(ctx, accountability, result.value);
+				await rememberSaved(ctx);
 				await applyRules(result.value, 'save');
 				logger.info(`${LOG_PREFIX} granular cache rules saved by ${accountability.user}: ${describeRules(result.value)}`);
 				return rules();
@@ -230,6 +234,7 @@ export default defineEndpoint({
 				const effective = applyEffective(env, null);
 				await applyRules(DEFAULT_RULES, 'save');
 				const deletedField = await deleteSettingsField(ctx, accountability);
+				await rememberSaved(ctx);
 				logger.info(`${LOG_PREFIX} extension data removed by ${accountability.user}: ${describe(effective)}`);
 				return { deletedField, state: await state() };
 			}),

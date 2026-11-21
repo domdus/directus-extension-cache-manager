@@ -1,6 +1,7 @@
 import { defineHook } from '@directus/extensions-sdk';
 import { applyEffective, captureBaseline, describe, ensureSettingsField, markStartupApplied, migrateIgnoreList, readRules, readStored, startupApplied, type ApiContext } from '../api/state';
 import { installTargeted, requestMiddleware, runtime } from '../api/targeted';
+import { startSettingsSync } from '../api/sync';
 import { describeRules } from '../shared/rules';
 import { LOG_PREFIX } from '../shared/constants';
 
@@ -43,6 +44,7 @@ export default defineHook(({ init }, context) => {
 			await migrate();
 			applyEffective(ctx.env, await readStored(ctx.database));
 			await installRules();
+			startSettingsSync(ctx);
 		})();
 		if (!runtime().middlewareRegistered) {
 			ctx.logger.warn(`${LOG_PREFIX} extension reloaded without a restart: restart Directus to use Granular mode`);
@@ -64,6 +66,8 @@ export default defineHook(({ init }, context) => {
 		}
 
 		await installRules();
+		// Other Directus servers may save settings or rules: pick them up without a restart.
+		startSettingsSync(ctx);
 	});
 
 	// After Directus' cache check, before the routes: records what each answer depends on.

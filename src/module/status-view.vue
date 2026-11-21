@@ -24,7 +24,7 @@
 				<p class="sidebar-text">
 					What you save here is used right away, without a restart. It stays after a restart until you reset it.
 				</p>
-				<p class="sidebar-text">If Directus runs on several servers, restart the other servers after saving.</p>
+				<p class="sidebar-text">If Directus runs on several servers, the others use what you saved within about 10 seconds.</p>
 			</sidebar-detail>
 			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Auto Purge">
 				<p class="sidebar-text">

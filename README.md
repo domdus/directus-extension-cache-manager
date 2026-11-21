@@ -126,7 +126,7 @@ What you save applies right away and stays after a restart. **Reset to Configure
 ## Good to Know
 
 - **Apps that need fresh data** right away, for example an access check after a purchase, should send `Cache-Control: no-store` for that request. **Skip Cache** must be on.
-- **One Directus server.** Granular Cache keeps its notes in memory. If Directus runs on several servers (with Redis), use **Whole Cache**, and restart the other servers after saving.
+- **Several Directus servers.** With the cache in Redis, Cache Manager keeps its notes in Redis too, so all servers share them: a change on any server clears exactly the cached responses that any server stored. Settings and rules saved on one server reach the others within about 10 seconds, without a restart. Statistics count per server.
 - **Saving clears the cache once**, because it writes to the project settings.
 - **Expired responses in memory.** With the cache kept in memory, Directus only deletes an expired cached response when someone asks for exactly that response again; responses nobody asks for again would stay until the whole cache is cleared or Directus restarts. Granular mode makes whole-cache clears rare, so Cache Manager deletes expired responses itself, about once a minute, without slowing Directus down. With Redis this is not needed.
 - **If Directus changes.** Granular Cache relies on how Directus works inside. If a future version doesn't fit, the page says so and Directus clears the whole cache as usual.
@@ -158,7 +158,33 @@ Granular mode without that rule doesn't help here (4 % from the cache), because 
 | Database queries | 31,422 | **762** | **−98 %** |
 | Database CPU time | 8.7 s | **0.6 s** | **−93 %** |
 
-So Directus answered twice as many reads while the database did about 97 % less work. Cache Manager's own work is within the run-to-run noise: reads from the cache and saves are as fast as without it, and a read that is not cached takes about 3 ms longer in Granular mode. The gain grows with slower queries and a database on another server; these tests ran on one machine.
+So Directus answered twice as many reads while the database did about 97 % less work.
+
+### Two Directus servers with Redis
+
+The same setup with two Directus servers sharing one Redis cache: readers spread over both servers, visits recorded on the second one.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-dark.png" />
+  <img alt="Two Directus servers with Redis: 74 to 82 % more reads per second, 97 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-light.png" width="800" />
+</picture>
+
+| | Directus alone | With Cache Manager | Difference |
+|---|---|---|---|
+| **Visits counted on the page**: reads per second | 364 | **634** | **+74 %** |
+| Median read time | 47 ms | **38 ms** | **−19 %** |
+| Database queries | 49,692 | **1,305** | **−97 %** |
+| Database CPU time | 12.3 s | **0.9 s** | **−93 %** |
+| **Visits in their own collection**: reads per second | 359 | **654** | **+82 %** |
+| Median read time | 55 ms | **35 ms** | **−36 %** |
+| Database queries | 50,248 | **877** | **−98 %** |
+| Database CPU time | 12.4 s | **0.7 s** | **−94 %** |
+
+A change on one server cleared exactly the cached responses that either server had stored. Without the Skip Fields rule, the page counter made Granular mode about 12 % slower than Directus alone here: every visit cleared nearly all cached responses anyway, and noting them in Redis costs a little extra. That rule is the fix.
+
+### Overhead
+
+Cache Manager's own work is within the run-to-run noise: reads from the cache and saves are as fast as without it, and a read that is not cached takes about 3 ms longer in Granular mode with the cache in memory. With Redis, noting each response there adds a little more, as the page counter without its rule shows. The gain grows with slower queries and a database on another server; these tests ran on one machine.
 
 ## Uninstall
 

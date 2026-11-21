@@ -4,6 +4,7 @@ import { parseDuration } from '../shared/duration';
 import { DEFAULT_RULE, DEFAULT_RULES, isTargetable, neverClears, ruleClears, ruleFor, ttlFor, type RulesConfig, type WriteAction } from '../shared/rules';
 import { TagIndex } from '../shared/tag-index';
 import { ExpiryQueue } from '../shared/expiry-queue';
+import { redisOf, SharedIndex } from './shared-index';
 import { LOG_PREFIX } from '../shared/constants';
 import { ENTRY_OVERHEAD, measureStoreChunked, memoryStoreOf, storedSizeOf, storeKeyOf, sweepKeys, type StoreSize, type SweepResult } from './store-size';
 
@@ -65,6 +66,9 @@ export type RuntimeStatus = {
 	cacheEnabled: boolean;
 	autoPurge: boolean;
 	targetedActive: boolean;
+	/** true: the index is in Redis and shared by all Directus servers. */
+	shared: boolean;
+	/** Cached responses this process indexed; -1 with the shared index (counted per collection only). */
 	indexed: number;
 	indexedByCollection: Record<string, number>;
 	since: string;
@@ -98,6 +102,13 @@ type Runtime = {
 	recent: ClearEvent[];
 	swept: SweepResult;
 	history: HistoryBucket[];
+	/**
+	 * With a Redis cache: the index and the clear counters live in Redis, so every Directus server sees what the others
+	 * stored (horizontal scaling). null with the memory store, where each process has its own cache anyway.
+	 */
+	shared: SharedIndex | null;
+	/** Cached responses per collection from the shared index, refreshed for Statistics. */
+	sharedCounts: Record<string, number>;
 	/** Store keys (with namespace) by the minute they expire: the sweep only looks at the due ones. */
 	expiry: ExpiryQueue;
 	/** Last chunked measurement of the memory store, and when it ran. Statistics shows it instead of scanning. */
@@ -179,6 +190,8 @@ function freshRuntime(): Runtime {
 		swept: { entries: 0, bytes: 0 },
 		history: [],
 		expiry: new ExpiryQueue(),
+		shared: null,
+		sharedCounts: {},
 		lastSize: null,
 		measuredAt: 0,
 		measuring: null,
@@ -309,6 +322,12 @@ async function fullClear(rt: Runtime, cache: KeyvLike, event: Omit<ClearEvent, '
 	rt.index.clear();
 	rt.expiry.clear();
 	rt.permissionDeps = null;
+	if (rt.shared) {
+		await sharedStep(rt, 'mark the full clear', async () => {
+			await rt.shared!.markCleared('full');
+			await rt.shared!.clearAll();
+		});
+	}
 	record(rt, { kind: 'full', removed: 0, ...event });
 }
 
@@ -353,7 +372,18 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 	rt.seq++;
 	rt.anyClearedAt = rt.seq;
 	for (const collection of purged) rt.clearedAt.set(collection, rt.seq);
-	const keys = rt.index.take([...purged, ANY]);
+	let keys: string[];
+	if (rt.shared) {
+		// Every server's responses: the sets in Redis. Without them it can't know what others stored, so clear everything.
+		const taken = await sharedStep(rt, 'find the cached responses to clear', async () => {
+			await rt.shared!.markCleared(purged);
+			return rt.shared!.take([...purged, ANY]);
+		});
+		if (!taken) return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${verb(ctx.action)} in ${ctx.collection} (Redis index not reachable)` });
+		keys = taken;
+	} else {
+		keys = rt.index.take([...purged, ANY]);
+	}
 	await deleteKeys(cache, keys);
 	const nested = collections.filter((name) => name !== ctx.collection);
 	record(rt, {
@@ -393,9 +423,18 @@ export async function handleSet(rt: Runtime, cache: KeyvLike, key: string, value
 	// In every mode: the sweep deletes the entry when it expires (Keyv only does that when the key is read again).
 	if (memoryStoreOf(cache)) rt.expiry.add(storeKeyOf(cache, key), expires);
 	if (!rt.config.targeted) return result;
-	if (request && isStale(rt, request)) {
+	const stale = request ? (rt.shared ? await sharedStep(rt, 'check the clear counters', () => rt.shared!.isStale(request.deps, request.start)) ?? true : isStale(rt, request)) : false;
+	if (stale) {
 		// Read before a change, stored after it: don't keep it.
 		await cache.delete(key);
+		return result;
+	}
+	if (rt.shared) {
+		if (!key.endsWith('__expires_at')) {
+			const added = await sharedStep(rt, 'note the cached response', () => rt.shared!.add(key, request?.deps ?? new Set([ANY]), maxLifetimeMs(rt)).then(() => true));
+			// Not noted, so a change could not find it: don't keep it.
+			if (!added) await cache.delete(key);
+		}
 		return result;
 	}
 	const bytes = storeKeyOf(cache, key).length + storedSizeOf(value) + ENTRY_OVERHEAD;
@@ -468,9 +507,10 @@ export function requestMiddleware(rt = runtime()) {
 	return (req: any, res: any, next: (error?: unknown) => void) => {
 		const isGraphql = String(req.originalUrl ?? '').startsWith('/graphql');
 		if (!rt.cache || (!rt.config.targeted && !hasTtlRules(rt.config)) || (req.method !== 'GET' && !isGraphql)) return next();
-		const start = rt.seq;
-		describeRequest(rt, req).then(
-			({ deps, ttl }) => {
+		const startOf = rt.shared ? sharedStep(rt, 'read the clear counter', () => rt.shared!.start()).then((value) => value ?? Number.MAX_SAFE_INTEGER) : Promise.resolve(rt.seq);
+		let start = rt.seq;
+		Promise.all([describeRequest(rt, req), startOf.then((value) => (start = value))]).then(
+			([{ deps, ttl }]) => {
 				if (ttl !== null) res.locals.cacheTTL = ttl;
 				rt.requestContext.run({ deps, start, ttl }, () => next());
 			},
@@ -513,6 +553,10 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 			ctx.logger.warn(error, `${LOG_PREFIX} could not reach the Directus cache`);
 		}
 	}
+	// With a Redis cache, the index lives in Redis so that all Directus servers share it.
+	const redis = rt.cache ? redisOf(rt.cache) : null;
+	const namespace = (rt.cache as { opts?: { namespace?: unknown } } | null)?.opts?.namespace;
+	rt.shared = redis ? new SharedIndex(redis, `cache-manager:${typeof namespace === 'string' && namespace ? namespace : 'system-cache'}`) : null;
 	// First measurement; it also queues entries stored before the extension was running (reload without restart).
 	if (rt.cache) void measure(rt).catch((error) => ctx.logger.warn(error, `${LOG_PREFIX} could not measure the cache`));
 	if (!rt.cache) problems.push(ctx.env['CACHE_ENABLED'] === true ? 'The Directus cache could not be reached' : 'The cache is off (CACHE_ENABLED)');
@@ -585,7 +629,30 @@ export async function applyRules(config: RulesConfig, origin: 'startup' | 'save'
 	if (rt.config.targeted && (!wasTargeted || origin === 'startup') && rt.cache && rt.originals) {
 		await fullClear(rt, rt.cache, { collection: null, action: null, reason: origin === 'startup' ? 'Directus started in Granular mode: start with an empty cache' : 'Switched to Granular: start with an empty cache' });
 	}
-	if (!rt.config.targeted) rt.index.clear();
+	if (!rt.config.targeted) {
+		rt.index.clear();
+		if (rt.shared) await sharedStep(rt, 'forget the shared index', () => rt.shared!.clearAll());
+	}
+}
+
+/** The longest lifetime a cached response can have: global or a rule's. The shared sets live that long. */
+function maxLifetimeMs(rt: Runtime): number {
+	let max = globalTtlMs(rt.env);
+	for (const rule of Object.values(rt.config.collections)) {
+		const ms = rule.ttl ? parseDuration(rule.ttl) : null;
+		if (ms && ms > max) max = ms;
+	}
+	return max;
+}
+
+/** Runs a Redis step of the shared index; a failure is logged and gives undefined, so callers can fall back safely. */
+async function sharedStep<T>(rt: Runtime, what: string, step: () => Promise<T>): Promise<T | undefined> {
+	try {
+		return await step();
+	} catch (error) {
+		rt.logger?.warn(error, `${LOG_PREFIX} could not ${what} in Redis`);
+		return undefined;
+	}
 }
 
 function targetedPossible(rt: Runtime): boolean {
@@ -615,8 +682,9 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		cacheEnabled: toBool(env['CACHE_ENABLED']),
 		autoPurge: toBool(env['CACHE_AUTO_PURGE']),
 		targetedActive: rt.config.targeted && rt.middlewareRegistered,
-		indexed: rt.index.size,
-		indexedByCollection: rt.index.counts(),
+		shared: !!rt.shared,
+		indexed: rt.shared ? -1 : rt.index.size,
+		indexedByCollection: rt.shared ? { ...rt.sharedCounts } : rt.index.counts(),
 		since: rt.since,
 		counts: { ...rt.counts, fullMinutes: rt.counts.fullMinutes ?? 0 },
 		recent: [...rt.recent],
@@ -645,6 +713,7 @@ function lastDay(rt: Runtime, now = Date.now()): HistoryBucket[] {
 export async function statusWithFreshSize(env?: Record<string, unknown>): Promise<RuntimeStatus> {
 	const rt = runtime();
 	if (Date.now() - rt.measuredAt >= MEASURE_ON_DEMAND) await measure(rt).catch(() => undefined);
+	if (rt.shared) rt.sharedCounts = (await sharedStep(rt, 'count the shared index', () => rt.shared!.counts())) ?? rt.sharedCounts;
 	return runtimeStatus(env);
 }
 

@@ -11,6 +11,7 @@ export type RulesStatus = {
 	cacheEnabled: boolean;
 	autoPurge: boolean;
 	targetedActive: boolean;
+	shared: boolean;
 	indexed: number;
 	indexedByCollection: Record<string, number>;
 	since: string;
