@@ -105,51 +105,9 @@
 					</button>
 				</div>
 
-				<div class="summary">
-					<div class="summary-head">
-						<span>Since Start <span class="since">{{ new Date(data.status.since).toLocaleString() }}</span></span>
-						<router-link to="/cache-manager/statistics">Details in Statistics</router-link>
-					</div>
-					<section class="summary-bar" aria-label="Clear counts since start">
-						<div class="stat">
-							<span class="stat-value">{{ formatNumber(data.status.counts.full) }}</span>
-							<span class="stat-label">
-								Whole Cache
-								<v-icon
-									v-tooltip.top="'Changes that cleared every cached answer.'"
-									name="help_outline"
-									small
-									class="stat-info"
-								/>
-							</span>
-						</div>
-						<div class="stat">
-							<span class="stat-value">{{ formatNumber(data.status.counts.targeted) }}</span>
-							<span class="stat-label">
-								Granular
-								<v-icon
-									v-tooltip.top="'Changes that cleared only the answers that use the changed collection.'"
-									name="help_outline"
-									small
-									class="stat-info"
-								/>
-							</span>
-						</div>
-						<div class="stat">
-							<span class="stat-value">{{ formatNumber(data.status.counts.skipped) }}</span>
-							<span class="stat-label">
-								Kept by Rule
-								<v-icon
-									v-tooltip.top="'Changes that cleared nothing because of a rule.'"
-									name="help_outline"
-									small
-									class="stat-info"
-								/>
-							</span>
-						</div>
-					</section>
-					<span class="summary-note">{{ summaryNote }}</span>
-				</div>
+				<p class="explain after-choice">
+					See what each change cleared in <router-link to="/cache-manager/statistics">Statistics</router-link>.
+				</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="rule" /></template>
@@ -257,7 +215,6 @@ import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 import { describeRule } from '../shared/rules';
 import { TTL_ERROR, bareMillisecondsHint, formatDurationLabel, formatDurationShort } from '../shared/duration';
-import { formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
 const { data, draft, loading, saving, error, message, dirty, canSave, invalidTtl, load, save, discard, addRule, removeRule, updateRule } = useRules();
@@ -301,19 +258,6 @@ function fieldChoices(collection: string) {
 	const fields = data.value?.collections.find((entry) => entry.name === collection)?.fields ?? [];
 	return fields.map((field) => ({ text: field, value: field }));
 }
-
-/** What the numbers mean in the current mode. */
-const summaryNote = computed(() => {
-	const status = data.value?.status;
-	if (!status) return '';
-	if (!status.targetedActive) {
-		return 'Whole Cache mode: every change that clears clears the whole cache.';
-	}
-	if (status.counts.full > 0) {
-		return 'Whole-cache clears now only come from changes that can affect every answer (users, roles, permissions, settings, data model), from a manual clear, or from switching to Granular.';
-	}
-	return 'No change had to clear the whole cache.';
-});
 
 function onAdd(name: string | null) {
 	if (!name) return;
@@ -369,11 +313,6 @@ onMounted(load);
 p.explain {
 	margin: 0 0 16px;
 }
-.since {
-	margin-left: 8px;
-	font-weight: 400;
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
-}
 .filter {
 	display: flex;
 	align-items: center;
@@ -382,65 +321,6 @@ p.explain {
 }
 .filter .v-input {
 	max-width: 360px;
-}
-.summary {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-	margin: 16px 0 0;
-}
-.summary-head {
-	display: flex;
-	justify-content: space-between;
-	gap: 12px;
-	flex-wrap: wrap;
-	font-weight: 600;
-}
-.summary-head a {
-	font-weight: 400;
-	color: var(--theme--primary, var(--primary));
-}
-.summary-bar {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-	inline-size: 100%;
-}
-.stat {
-	display: inline-flex;
-	flex: 1 1 auto;
-	align-items: baseline;
-	gap: 0.4rem;
-	min-inline-size: max-content;
-	padding: 0.4rem 0.7rem;
-	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
-	border-radius: var(--theme--border-radius, var(--border-radius));
-	background: var(--theme--background-subdued, var(--background-subdued));
-	white-space: nowrap;
-}
-.stat-value {
-	font-size: 0.9rem;
-	font-weight: 700;
-	line-height: 1.3;
-	color: var(--theme--foreground, var(--foreground-normal));
-	font-variant-numeric: tabular-nums;
-}
-.stat-label {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	font-size: 0.8rem;
-	font-weight: 600;
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
-}
-.stat-info {
-	--v-icon-color: var(--theme--foreground-subdued, var(--foreground-subdued));
-	cursor: pointer;
-	flex-shrink: 0;
-}
-.summary-note {
-	font-size: 13px;
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .empty {
 	margin: 8px 0 0;
@@ -581,5 +461,11 @@ td.center :deep(.v-checkbox) {
 code {
 	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 0.9em;
+}
+.after-choice {
+	margin: 12px 0 0;
+}
+.after-choice a {
+	color: var(--theme--primary, var(--primary));
 }
 </style>

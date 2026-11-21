@@ -115,7 +115,7 @@ With more than five rules, a filter above the table finds rules by collection or
 
 ### Statistics
 
-**Cache Manager → Statistics** shows what actually happened in this Directus process: how often the whole cache was cleared, how often only affected answers were cleared, and which changes a rule kept. The last 50 events are listed with their reason, for example "Changed in services · 3 answers cleared" or "Only views_count changed in videos · Kept (rule)". Use it to check your rules before you rely on them. The page refreshes every 15 seconds; the numbers start at zero when Directus restarts. Granular Cache shows the three numbers at the top, with a link.
+**Cache Manager → Statistics** shows what actually happened in this Directus process: how often the whole cache was cleared, how often only affected answers were cleared, and which changes a rule kept. The last 50 events are listed with their reason, for example "Changed in services · 3 answers cleared" or "Only views_count changed in videos · Kept (rule)". Use it to check your rules before you rely on them. The page refreshes every 15 seconds; the numbers start at zero when Directus restarts. Granular Cache links to it below the mode choice.
 
 **Cache Size** shows how much the cache holds in memory: entries, size, expired entries still waiting, and how much the extension freed. In Granular mode it also lists the largest collections. **Last 24 Hours** shows two bar charts per hour: the changes (whole cache, granular, kept by rule) and the largest cache size in that hour. The size is measured only with `CACHE_STORE=memory`; with Redis the page says so.
 

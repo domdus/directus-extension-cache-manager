@@ -55,7 +55,7 @@
 						<span class="stat-label">
 							Whole Cache
 							<v-icon
-								v-tooltip.top="'Changes that cleared every cached answer.'"
+								v-tooltip.top="'Changes that cleared every cached answer. In Granular mode only changes that can affect every answer do this (users, roles, permissions, settings, data model), plus a manual clear and switching to Granular.'"
 								name="help_outline"
 								small
 								class="stat-info"
