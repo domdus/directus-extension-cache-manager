@@ -1,5 +1,5 @@
 import { defineHook } from '@directus/extensions-sdk';
-import { applyEffective, captureBaseline, describe, ensureSettingsField, markStartupApplied, readRules, readStored, startupApplied, type ApiContext } from '../api/state';
+import { applyEffective, captureBaseline, describe, ensureSettingsField, markStartupApplied, migrateIgnoreList, readRules, readStored, startupApplied, type ApiContext } from '../api/state';
 import { installTargeted, requestMiddleware, runtime } from '../api/targeted';
 import { describeRules } from '../shared/rules';
 import { LOG_PREFIX } from '../shared/constants';
@@ -28,9 +28,22 @@ export default defineHook(({ init }, context) => {
 		}
 	}
 
+	/** Converts a saved ignore list from an older version into rules (once). Never blocks startup. */
+	async function migrate() {
+		try {
+			await migrateIgnoreList(ctx);
+		} catch (error) {
+			ctx.logger.error(error, `${LOG_PREFIX} could not move the saved ignore list to rules; it still applies`);
+		}
+	}
+
 	if (reloaded) {
 		// The rules work right away; the request middleware (which collections an answer uses) needs a restart.
-		void installRules();
+		void (async () => {
+			await migrate();
+			applyEffective(ctx.env, await readStored(ctx.database));
+			await installRules();
+		})();
 		if (!runtime().middlewareRegistered) {
 			ctx.logger.warn(`${LOG_PREFIX} extension reloaded without a restart: restart Directus to use Granular mode`);
 		}
@@ -39,6 +52,7 @@ export default defineHook(({ init }, context) => {
 	init('app.before', async () => {
 		try {
 			await ensureSettingsField(ctx);
+			await migrate();
 			const stored = await readStored(ctx.database);
 			const effective = applyEffective(ctx.env, stored);
 			markStartupApplied();

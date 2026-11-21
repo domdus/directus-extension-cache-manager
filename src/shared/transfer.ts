@@ -23,7 +23,8 @@ export function buildExport(stored: StoredOverride | null, now = new Date(), rul
 		extension: EXTENSION_PACKAGE_NAME,
 		format: EXPORT_FORMAT,
 		exportedAt: now.toISOString(),
-		settings: stored ? { autoPurge: stored.autoPurge, skipAllowed: stored.skipAllowed, ignoreList: stored.ignoreList, ttl: stored.ttl } : null,
+		// ignoreList is not saved anymore (rules that never clear replaced it); kept as null for older versions.
+		settings: stored ? { autoPurge: stored.autoPurge, skipAllowed: stored.skipAllowed, ignoreList: null, ttl: stored.ttl } : null,
 		updatedAt: stored?.updatedAt ?? null,
 	};
 }
@@ -31,8 +32,9 @@ export function buildExport(stored: StoredOverride | null, now = new Date(), rul
 export class ImportError extends Error {}
 
 /**
- * Reads an exported file. Returns the body for POST /apply, which checks the values (types, collections, duration).
- * Also accepts the bare settings object `{ autoPurge, skipAllowed, ignoreList, ttl }`.
+ * Reads an exported file. Returns the body for POST /apply, which checks the values (types, duration).
+ * Also accepts the bare settings object `{ autoPurge, skipAllowed, ttl }`. An `ignoreList` (files from older
+ * versions) is left out here: see parseImportIgnoreList.
  */
 export function parseImport(text: string): Record<string, unknown> {
 	let data: unknown;
@@ -74,6 +76,22 @@ const KEYS = ['autoPurge', 'skipAllowed', 'ignoreList', 'ttl'];
 function pick(obj: Record<string, unknown>): Record<string, unknown> {
 	const keys = Object.keys(obj).filter((key) => !['updatedAt', 'updatedBy'].includes(key));
 	if (keys.length && !keys.some((key) => KEYS.includes(key))) throw new ImportError('This file does not contain Cache Manager settings.');
-	// Unknown keys are passed on, so /apply names them in its error.
-	return Object.fromEntries(keys.map((key) => [key, obj[key]]));
+	// Unknown keys are passed on, so /apply names them in its error. ignoreList becomes rules (parseImportIgnoreList).
+	return Object.fromEntries(keys.filter((key) => key !== 'ignoreList').map((key) => [key, obj[key]]));
+}
+
+/**
+ * The saved ignore list of a file from an older version. The import turns it into rules that never clear, like the
+ * conversion at startup.
+ */
+export function parseImportIgnoreList(text: string): string[] {
+	try {
+		const data = JSON.parse(text);
+		if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
+		const source = 'settings' in data || 'extension' in data ? data.settings : data;
+		const list = source && typeof source === 'object' ? (source as Record<string, unknown>).ignoreList : undefined;
+		return Array.isArray(list) ? [...new Set(list.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean))] : [];
+	} catch {
+		return [];
+	}
 }

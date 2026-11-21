@@ -11,12 +11,6 @@ export function pendingChanges(draft: CacheValues, effective: CacheValues | null
 	if (!sameDuration(draft.ttl, effective.ttl)) {
 		list.push(`keep answers in the cache for: ${draft.ttl ? formatDurationLabel(draft.ttl) : '(empty)'}`);
 	}
-	const now = new Set(effective.ignoreList);
-	const next = new Set(draft.ignoreList);
-	const added = draft.ignoreList.filter((name) => !now.has(name));
-	const removed = effective.ignoreList.filter((name) => !next.has(name));
-	if (added.length) list.push(`ignore ${added.join(', ')}`);
-	if (removed.length) list.push(`stop ignoring ${removed.join(', ')}`);
 	return list;
 }
 

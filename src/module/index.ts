@@ -1,7 +1,7 @@
 import { defineModule } from '@directus/extensions-sdk';
 import { EXTENSION_ID } from '../shared/constants';
 import { userHasAdminAccess } from '../shared/admin';
-import IgnoreListView from './ignore-list-view.vue';
+import AnalysisView from './analysis-view.vue';
 import GranularView from './granular-view.vue';
 import StatisticsView from './statistics-view.vue';
 import SettingsView from './settings-view.vue';
@@ -17,8 +17,8 @@ export default defineModule({
 			component: StatusView,
 		},
 		{
-			path: 'ignore-list',
-			component: IgnoreListView,
+			path: 'analysis',
+			component: AnalysisView,
 		},
 		{
 			path: 'cache',
@@ -38,21 +38,21 @@ export default defineModule({
 			redirect: '/cache-manager/cache',
 		},
 		{
-			// Earlier names of the Ignore List page.
+			// Earlier names of the Analysis page (it was the Ignore List until rules replaced it).
+			path: 'ignore-list',
+			redirect: '/cache-manager/analysis',
+		},
+		{
 			path: 'optimize',
-			redirect: '/cache-manager/ignore-list',
+			redirect: '/cache-manager/analysis',
 		},
 		{
 			path: 'clearing',
-			redirect: '/cache-manager/ignore-list',
+			redirect: '/cache-manager/analysis',
 		},
 		{
 			path: 'collections',
-			redirect: '/cache-manager/ignore-list',
-		},
-		{
-			path: 'analysis',
-			redirect: '/cache-manager/ignore-list',
+			redirect: '/cache-manager/analysis',
 		},
 	],
 	// The endpoint checks admin rights too; this only hides the module for everyone else.

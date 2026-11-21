@@ -1,10 +1,10 @@
 # Cache Manager
 
-Stop Directus from throwing away its whole cache on every change (`CACHE_AUTO_PURGE`). Cache Manager shows what clears the cache, lets you ignore busy collections, and can make a change clear **only the cached answers that use the changed collection**. Everything is set in the Data Studio. No config files, no restart.
+Stop Directus from throwing away its whole cache on every change (`CACHE_AUTO_PURGE`). Cache Manager shows what clears the cache, lets you keep busy collections from clearing it, and can make a change clear **only the cached answers that use the changed collection**. Everything is set in the Data Studio. No config files, no restart.
 
 <img alt="Cache Manager — Granular Cache" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/granular-cache.png" width="800" />
 
-Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Granular Cache** makes a change clear only the cached answers that use the changed collection, and sets rules and cache lifetimes per collection. **Ignore List** shows what clears the cache and lets you choose which collections to ignore. Changes to an ignored collection don't clear the cache. **Statistics** shows what each change actually cleared since Directus started. **Settings** checks for updates, exports and imports what you saved, and removes the extension's data before you uninstall.
+Open **Cache Manager** from the module bar (admins only). **Status** shows the settings in use, two switches and how long answers stay in the cache. **Granular Cache** makes a change clear only the cached answers that use the changed collection, and sets rules and cache lifetimes per collection. **Analysis** counts in the activity log which collections clear the cache how often, and suggests rules that never clear for the busiest ones. **Statistics** shows what each change actually cleared since Directus started. **Settings** checks for updates, exports and imports what you saved, and removes the extension's data before you uninstall.
 
 ## Why
 
@@ -50,36 +50,36 @@ npm run build
 
 ## Configure
 
-1. Open **Cache Manager → Ignore List** and pick a time period (last hour to last 7 days).
-2. Read the first tile, **How often the cache is cleared**. Example: "12 times per hour. The cache was cleared 296 times in the last 24 hours." Lower is better.
-3. Select collections in the table and click **Ignore selected** (or **Stop ignoring selected**), pick one with **Ignore another collection…**, or click **Apply suggested** in the **Suggestion** tile. The **Status** column shows what Save & Apply will change ("Will keep cache", "Will clear cache"). The tile **Your changes** shows the effect, for example "Ignoring your choice: 3 times per hour instead of 12".
-4. Optionally change the switches or how long answers stay in the cache on **Status**. Both pages share your unsaved changes.
-5. Click **Save & Apply** (✓) in the page header. It is used right away. **Discard Changes** (↶) next to it drops what you have not saved yet. Hover ✓ to see how many changes are not saved.
+1. Open **Cache Manager → Analysis** and pick a time period (last hour to last 7 days).
+2. Read the first tile, **Cache Clears**: how many times per hour the whole cache was cleared. Lower is better.
+3. Select collections in the table and click **Never clear selected** (or **Clear again**), pick one with **Never clear another collection…**, or click **Apply suggested**. Each adds a rule with Create, Update and Delete off on **Granular Cache**. The **Status** column shows what Save & Apply will change ("Will keep cache", "Will clear cache"), and the tile **Your Changes** shows the effect.
+4. Refine the rules on **Granular Cache**, for example Skip Fields instead of never clearing. Analysis and Granular Cache share your unsaved rules.
+5. Click **Save & Apply** (✓) in the page header. It is used right away. **Discard Changes** (↶) next to it drops what you have not saved yet.
 
 **Reset to Configured Values** on the Status page removes what you saved here and uses the configured values again.
 
 ### Settings page
 
 - **Extension Updates**: checks npm for a newer version.
-- **Export / Import**: downloads what you saved as a JSON file, or loads such a file. An import is checked like Save & Apply (for example, every collection must exist in this project) and is used right away.
+- **Export / Import**: downloads what you saved (settings and rules) as a JSON file, or loads such a file. An import is checked like Save & Apply and is used right away. An ignore list in a file from an older version becomes rules that never clear.
 - **Remove extension data**: uses the configured values again and deletes the `cache_manager` field. Use it before uninstalling.
 
 ## The settings
 
 | In the module | Setting name | On | Off | Recommended |
 |---|---|---|---|---|
-| Auto Purge | `CACHE_AUTO_PURGE` | A change to a collection that is not ignored clears the whole cache. Everyone sees changes right away | Changes never clear the cache. They show up when the cached copy expires, so editors may wait that long | On |
+| Auto Purge | `CACHE_AUTO_PURGE` | A change clears the whole cache, unless its collection is ignored or its rule never clears. Everyone sees changes right away | Changes never clear the cache. They show up when the cached copy expires, so editors may wait that long | On |
 | Skip Cache | `CACHE_SKIP_ALLOWED` | An app can ask for fresh data with the header `Cache-Control: no-store` | The header has no effect | On, if your Directus is not open to the public |
-| Ignored collections | `CACHE_AUTO_PURGE_IGNORE_LIST` | | | Collections that change very often, and that nobody needs up to date to the second: counters, logs, statistics |
+| Ignored collections | `CACHE_AUTO_PURGE_IGNORE_LIST` | Shown on Status, set only in the Directus configuration | | Keep it short. Use rules that never clear for anything else: they show up in Statistics and can have their own lifetime |
 | Cache Lifetime | `CACHE_TTL` | A duration like `5m`, `1h` or `1d`, at most 30 days | | Between 5 minutes and a few hours. Shorter means fresher data, but more work for the database. Longer means less work for the database, but data that is not cleared can be older |
 
 A new value for **Cache Lifetime** applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared.
 
 **Cache Store** (`CACHE_STORE`) is shown on the Status page, but can't be changed here.
 
-Ignored collections can be served from the cache for up to that time after a change. Apps can ask for fresh data with the header `Cache-Control: no-store` when **Skip Cache** is on. The Data Studio always loads selected collections fresh, so editors see their changes.
+Collections that don't clear the cache can be served from it for up to that time after a change. Apps can ask for fresh data with the header `Cache-Control: no-store` when **Skip Cache** is on. The Data Studio always loads selected collections fresh, so editors see their changes.
 
-Don't ignore collections that decide what users may see or buy, like subscriptions, purchases or access rights. Only ignore them if the apps that read them ask for fresh data. Otherwise a user could get or lose access late.
+Keep clearing for collections that decide what users may see or buy, like subscriptions, purchases or access rights. Only stop it if the apps that read them ask for fresh data. Otherwise a user could get or lose access late.
 
 ## Granular Cache
 
@@ -105,11 +105,11 @@ Add a rule for a collection to change what its changes do. Rules also work with 
 |---|---|---|
 | **Create, Update, Delete** | Which changes clear the cache | Turn off Update for a collection where only new or deleted items matter |
 | **Skip Fields** | A change that only touches these fields keeps the cache. Any other field still clears | `views_count` on videos: counting a view keeps the cache, a new title clears it |
-| **Lifetime** | How long answers that use this collection stay cached, instead of `CACHE_TTL` | `5m` for a collection that is ignored, so its answers are never older than 5 minutes; `1d` for pages that change rarely |
+| **Lifetime** | How long answers that use this collection stay cached, instead of `CACHE_TTL` | `5m` for a collection that never clears, so its answers are never older than 5 minutes; `1d` for pages that change rarely |
 
 An answer that uses several collections stays as long as the shortest time among them. Collections without their own time count with the global one.
 
-Rules are often a better fit than the ignore list. Ignoring `videos` because of a view counter also hides new and deleted videos until the cache expires. A rule that skips only `views_count` keeps the cache for counting views and still shows a new video right away.
+A rule that never clears does what the ignore list does, but often a smaller rule fits better. Never clearing `videos` because of a view counter also hides new and deleted videos until the cache expires. A rule that skips only `views_count` keeps the cache for counting views and still shows a new video right away.
 
 With more than five rules, a filter above the table finds rules by collection or field name.
 
@@ -136,13 +136,13 @@ An answer that was read just before a change but is stored just after it would b
 - **Tested with Directus 9.26, 10.13, 11.7, 11.17 and 12.5** (Postgres, memory cache). Because it relies on how Directus works inside, a future version may change that. If the extension can't attach, the page says so and Directus clears the whole cache as usual.
 - **Apps still need `Cache-Control: no-store`** for reads that must be up to date right away, for example access checks after a purchase.
 
-## How the Ignore List counts
+## How Analysis counts
 
-- A minute counts as "cleared" when at least one collection that is not ignored changed in it. Several changes in the same minute count as one.
+- A minute counts as "cleared" when at least one collection changed in it that is not on the configured ignore list and whose rule doesn't never clear. Rules that keep only some changes (one action off, Skip Fields) count as clearing, because the activity log doesn't show which fields changed. Several changes in the same minute count as one.
 - **How often the cache is cleared** shows how many times per hour the cache was cleared in the chosen period (several clears in the same minute count once). Lower is better.
 - **Changed in** shows, per collection, the minutes with at least one change, and how many that is per hour (for example "288 min · ~12/h").
-- **Status** shows "Keeps cache" for collections ignored now, "Clears cache" for the others and "Not measured" for collections without activity tracking. Unsaved changes show as "Will keep cache" or "Will clear cache".
-- **Effect if ignored** shows how much less often the cache would be cleared if you also ignored that collection. A bigger drop is better.
+- **Status** shows "Keeps cache" for collections that never clear now (rule or configured ignore list), "Clears cache" for the others and "Not measured" for collections without activity tracking. Unsaved changes show as "Will keep cache" or "Will clear cache".
+- **If never cleared** shows how much less often the cache would be cleared if that collection's rule never cleared. A bigger drop is better.
 - The numbers come from the activity log. Changes that are not logged there can't be counted, but they still clear the cache:
   - Collections with **Activity & Revision Tracking** set to "Do not track anything". They are listed at the end of the table as **Not measured**, with a **Turn on tracking** button that opens the collection in the Data Model. They are left out of all numbers and suggestions, and tile 1 names them ("Not measured: 1 collection (…). The real number can be higher.").
   - Changes made by Flows that run without activity tracking. These can't be detected.
@@ -150,22 +150,24 @@ An answer that was read just before a change but is stored just after it would b
 
 ## Suggestions
 
-A collection is suggested for ignoring when all of these are true (limits in `src/shared/constants.ts`):
+A collection is suggested for a rule that never clears when all of these are true (limits in `src/shared/constants.ts`):
 
-- it is not ignored yet,
+- it doesn't keep the cache yet,
 - it changed at least **3 times per hour** in the chosen period,
 - it is not a Directus system collection. `directus_*` collections are never suggested, except `directus_activity`, `directus_presets`, `directus_notifications` and `directus_revisions`,
 - it is not mostly changed by editors in the Data Studio: at most **50 %** of its changes came from logged-in users on the public address of Directus (`PUBLIC_URL`). This check needs a full address there.
 
-**In Granular mode** the Ignore List shows no ignore suggestions, because they assume that every change clears the whole cache. A collection that changes often gets **Try a rule** instead, which opens Granular Cache. Ignoring still works there: an ignored collection's changes don't even clear its own answers.
+**In Granular mode** the numbers still assume that every change clears the whole cache, and the page says so. Skip Fields or a lifetime may then be enough for a busy collection.
+
+**The Ignore List page of earlier versions** saved its own list. At the first start of this version, each collection it added becomes a rule that never clears, and the saved list is removed. Collections in `CACHE_AUTO_PURGE_IGNORE_LIST` stay as they are.
 
 ## What to know
 
-- **Not everything can be counted.** Collections without activity tracking and some Flow changes are not in the activity log, and Directus may delete old activity. The Ignore List page says when this affects the numbers.
+- **Not everything can be counted.** Collections without activity tracking and some Flow changes are not in the activity log, and Directus may delete old activity. The Analysis page says when this affects the numbers.
 - **Several servers.** Saving changes the settings on the server that handles the save. If Directus runs on several servers, restart the others after saving. They use the saved settings when they start. The Status page warns when the settings in use don't match.
-- **Expired answers in memory.** With `CACHE_STORE=memory`, Directus deletes an expired answer only when someone asks for it again. Answers nobody asks for again stay in memory until the whole cache is cleared. With Auto Purge on, that happened often; with Granular mode, the Ignore List or Auto Purge off, it may never happen. The extension therefore deletes expired entries from the memory store once a minute, in every mode. Redis removes them itself.
+- **Expired answers in memory.** With `CACHE_STORE=memory`, Directus deletes an expired answer only when someone asks for it again. Answers nobody asks for again stay in memory until the whole cache is cleared. With Auto Purge on, that happened often; with Granular mode, rules that never clear or Auto Purge off, it may never happen. The extension therefore deletes expired entries from the memory store once a minute, in every mode. Redis removes them itself.
 - **Saving clears the cache once**, because it writes to the project settings.
-- **Databases.** The Ignore List page works with PostgreSQL and MySQL. On other databases it shows an error. The settings still work.
+- **Databases.** The Analysis page works with PostgreSQL and MySQL. On other databases it shows an error. The settings still work.
 - **Browsers and proxies.** When **Auto Purge** is off, Directus also tells browsers and proxies how long they may keep an answer. It uses the value of **Cache Lifetime** for that, so a new value also applies there for new answers.
 - **Schema snapshots** include the extra field `cache_manager` on `directus_settings`.
 
@@ -175,10 +177,10 @@ A collection is suggested for ignoring when all of these are true (limits in `sr
 
 - Directus reads these settings on every change and every request (`CACHE_TTL` each time it stores a new cache entry). Extensions get the same settings object, so the extension changes the values there and they apply at once.
 - **Configured** values are the ones Directus started with: from an `.env` file, a config file or environment variables. If Directus was started with `CONFIG_PATH`, the Status page shows that file.
-- **Saved here** is stored in `directus_settings.cache_manager` as `{ autoPurge, skipAllowed, ignoreList, ttl, updatedAt, updatedBy, rules }`. `null` means "use the configured value". A value equal to the configured one is stored as `null`, so later configuration changes come through.
+- **Saved here** is stored in `directus_settings.cache_manager` as `{ autoPurge, skipAllowed, ttl, updatedAt, updatedBy, rules }`. `null` means "use the configured value". A value equal to the configured one is stored as `null`, so later configuration changes come through.
 - These changes are lost when Directus restarts, so a hook applies the saved values again at startup (`app.before`).
 - Saving goes through the settings service, so it appears in the activity log and revisions under the admin who saved.
-- The Ignore List page uses one grouped query on `directus_activity` (creates, updates and deletes in the chosen period, per collection and minute).
+- The Analysis page uses one grouped query on `directus_activity` (creates, updates and deletes in the chosen period, per collection and minute).
 - Granular Cache (`src/api/targeted.ts`):
   - The hook wraps the write methods of `ItemsService` (`createOne`, `createMany`, `updateBatch`, `updateMany`, `upsertMany`, `deleteMany`) and keeps the collection, action and fields of each write and its nested writes in an `AsyncLocalStorage` context. Nested writes are recorded on the parent because Directus tells many of them not to clear (`autoPurgeCache: false`) and relies on the parent clearing everything.
   - It wraps `clear()` and `set()` of the shared response cache (Keyv). `clear()` inside a write applies the rules and deletes only the indexed keys of the written collections; outside a write it clears everything. Activity and revision records written during a save never cause a clear on their own.
@@ -192,8 +194,8 @@ All routes need an admin.
 | Route | Meaning |
 |---|---|
 | `GET /cache-manager/state` | Configured values, values in use, saved values, `CACHE_TTL`, `CACHE_STORE`, collections |
-| `GET /cache-manager/analysis?hours=24&candidate=a,b` | Numbers for the Ignore List page; `candidate` adds a what-if value for that list |
-| `POST /cache-manager/apply` | Body `{ "autoPurge": true, "skipAllowed": null, "ignoreList": ["view_counter"], "ttl": "1h" }`. `null` or missing = configured value. List entries must be existing collections |
+| `GET /cache-manager/analysis?hours=24&candidate=a,b` | Numbers for the Analysis page (rules that never clear count as ignored); `candidate` adds a what-if value for that list |
+| `POST /cache-manager/apply` | Body `{ "autoPurge": true, "skipAllowed": null, "ttl": "1h" }`. `null` or missing = configured value. `ignoreList` is refused: add a rule that never clears |
 | `POST /cache-manager/reset` | Remove the saved values and use the configured values |
 | `POST /cache-manager/cleanup` | Use the configured values, the default Granular Cache rules, and delete the `cache_manager` field |
 | `GET /cache-manager/rules` | Granular Cache rules, what happened since start, collections and fields |

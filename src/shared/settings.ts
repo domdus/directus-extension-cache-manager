@@ -1,4 +1,3 @@
-import { MAX_LIST_LENGTH } from './constants';
 import { durationText, isValidTtl, sameDuration, TTL_ERROR } from './duration';
 
 /** The env values this extension manages. */
@@ -141,7 +140,8 @@ export function toOverride(baseline: CacheValues, desired: CacheValues): Overrid
 	return {
 		autoPurge: desired.autoPurge === baseline.autoPurge ? null : desired.autoPurge,
 		skipAllowed: desired.skipAllowed === baseline.skipAllowed ? null : desired.skipAllowed,
-		ignoreList: sameList(desired.ignoreList, baseline.ignoreList) ? null : unique(desired.ignoreList),
+		// Not saved anymore: rules that never clear replace the saved ignore list (see migrateIgnoreList).
+		ignoreList: null,
 		ttl: sameDuration(desired.ttl, baseline.ttl) ? null : durationText(desired.ttl),
 	};
 }
@@ -172,25 +172,12 @@ export function validateInput(body: unknown, collections: Set<string>): Validati
 	const autoPurge = bool('autoPurge');
 	const skipAllowed = bool('skipAllowed');
 
-	let ignoreList: string[] | null = null;
-	const list = input.ignoreList;
-	if (list !== undefined && list !== null) {
-		if (!Array.isArray(list)) errors.push('ignoreList must be an array of collection names or null');
-		else if (list.length > MAX_LIST_LENGTH) errors.push(`ignoreList has more than ${MAX_LIST_LENGTH} entries`);
-		else {
-			const names: string[] = [];
-			for (const entry of list) {
-				if (typeof entry !== 'string' || !entry.trim()) {
-					errors.push('ignoreList entries must be non-empty strings');
-					continue;
-				}
-				names.push(entry.trim());
-			}
-			const unknown = unique(names.filter((name) => !collections.has(name)));
-			if (unknown.length) errors.push(`${unknown.length > 1 ? 'These collections do' : 'This collection does'} not exist in this project: ${unknown.join(', ')}`);
-			ignoreList = unique(names);
-		}
+	// The ignore list is not saved here anymore: a rule that never clears does the same (POST /rules).
+	const ignoreList: string[] | null = null;
+	if (input.ignoreList !== undefined && input.ignoreList !== null) {
+		errors.push('ignoreList can no longer be saved: add a rule that never clears instead (POST /rules)');
 	}
+	void collections;
 
 	let ttl: string | null = null;
 	if (input.ttl !== undefined && input.ttl !== null) {

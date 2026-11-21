@@ -1,5 +1,5 @@
 import { LOG_PREFIX, SETTINGS_FIELD } from '../shared/constants';
-import { DEFAULT_RULES, isDefaultRule, parseRules, type RulesConfig } from '../shared/rules';
+import { DEFAULT_RULES, isDefaultRule, parseRules, withNeverClear, type RulesConfig } from '../shared/rules';
 import { applyToEnv, completeBaseline, mergeValues, parseStored, readValues, type CacheValues, type StoredOverride } from '../shared/settings';
 
 type Env = Record<string, unknown>;
@@ -129,6 +129,34 @@ export async function writeRules(ctx: ApiContext, accountability: unknown, rules
 }
 
 export { DEFAULT_RULES };
+
+/**
+ * The Ignore List page used to save its own list (stored `ignoreList`, written into CACHE_AUTO_PURGE_IGNORE_LIST).
+ * Rules do the same now: each collection it added becomes a rule that never clears, and the stored list is removed,
+ * so the configured list applies again. Runs at startup; does nothing once converted. Returns the converted names.
+ */
+export async function migrateIgnoreList(ctx: ApiContext): Promise<string[] | null> {
+	const raw = await readRaw(ctx.database);
+	if (!raw || !('ignoreList' in raw)) return null;
+	const saved = parseStored(raw)?.ignoreList ?? [];
+	const configured = getBaseline(ctx.env).ignoreList;
+	const collections = (await ctx.getSchema()).collections ?? {};
+	const added = saved.filter((name) => !configured.includes(name) && name in collections);
+	const removed = configured.filter((name) => !saved.includes(name));
+
+	const rules = withNeverClear(parseRules(raw.rules), added);
+	const { ignoreList: _list, rules: _rules, ...rest } = raw;
+	const next = { ...rest, ...(hasRules(rules) ? { rules } : {}) };
+	await writeRaw(ctx, null, parseStored(next) || next.rules ? next : null);
+
+	if (added.length) ctx.logger.info(`${LOG_PREFIX} ignore list moved to rules that never clear: ${added.join(', ')}`);
+	if (removed.length) {
+		ctx.logger.warn(
+			`${LOG_PREFIX} the saved ignore list stopped ignoring configured collections (${removed.join(', ')}); this is no longer supported, they are ignored again as configured. Remove them from CACHE_AUTO_PURGE_IGNORE_LIST to change that.`,
+		);
+	}
+	return added;
+}
 
 /** Merges baseline and override and writes the result into env. Returns the effective values. */
 /** Drops the settings field. The hook creates it again (empty) at the next start while the extension is installed. */

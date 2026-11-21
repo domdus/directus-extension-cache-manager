@@ -52,6 +52,32 @@ export function isDefaultRule(rule: CollectionRule): boolean {
 	return rule.create && rule.update && rule.delete && rule.skipFields.length === 0 && rule.ttl === null;
 }
 
+/** A rule with every action off: changes to the collection never clear the cache. */
+export function neverClears(rule: CollectionRule | undefined): boolean {
+	return !!rule && !rule.create && !rule.update && !rule.delete;
+}
+
+/** Collections whose rule never clears. */
+export function neverClearCollections(config: RulesConfig): string[] {
+	return Object.entries(config.collections)
+		.filter(([, rule]) => neverClears(rule))
+		.map(([name]) => name)
+		.sort();
+}
+
+/**
+ * Turns these collections into "never clears" rules (entries of the former Ignore List, also from older export
+ * files). An existing rule keeps its skip fields and lifetime.
+ */
+export function withNeverClear(config: RulesConfig, names: string[]): RulesConfig {
+	const collections = { ...config.collections };
+	for (const name of names) {
+		const current = collections[name] ?? DEFAULT_RULE;
+		collections[name] = { ...current, skipFields: [...current.skipFields], create: false, update: false, delete: false };
+	}
+	return { ...config, collections };
+}
+
 export function ruleFor(config: RulesConfig, collection: string): CollectionRule {
 	return config.collections[collection] ?? DEFAULT_RULE;
 }

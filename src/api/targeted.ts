@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { ANY, collectionOfPath, filterDependencies, queryDependencies, type SchemaLike } from '../shared/dependencies';
 import { parseDuration } from '../shared/duration';
-import { DEFAULT_RULES, isTargetable, ruleClears, ruleFor, ttlFor, type RulesConfig, type WriteAction } from '../shared/rules';
+import { DEFAULT_RULE, DEFAULT_RULES, isTargetable, neverClears, ruleClears, ruleFor, ttlFor, type RulesConfig, type WriteAction } from '../shared/rules';
 import { TagIndex } from '../shared/tag-index';
 import { LOG_PREFIX } from '../shared/constants';
 import { answerSizeIn, measureStore, memoryStoreOf, storedSizeOf, type StoreSize, type SweepResult } from './store-size';
@@ -312,7 +312,7 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 	const bookkeeping = writes.filter((touch) => BOOKKEEPING.has(touch.collection) && touch !== ctx);
 	const clearing = writes.filter((touch) => !bookkeeping.includes(touch) && ruleClears(ruleFor(rt.config, touch.collection), touch.action, touch.fields));
 	if (!clearing.length) {
-		record(rt, { kind: 'skipped', collection: ctx.collection, action: ctx.action, removed: 0, reason: skipReason(ctx) });
+		record(rt, { kind: 'skipped', collection: ctx.collection, action: ctx.action, removed: 0, reason: skipReason(ctx, ruleFor(rt.config, ctx.collection)) });
 		return;
 	}
 
@@ -344,7 +344,8 @@ function verb(action: WriteAction): string {
 	return { create: 'Created', update: 'Changed', delete: 'Deleted', upsert: 'Saved' }[action];
 }
 
-function skipReason(ctx: Touch): string {
+function skipReason(ctx: Touch, rule = DEFAULT_RULE): string {
+	if (neverClears(rule)) return `${verb(ctx.action)} in ${ctx.collection}, rule never clears`;
 	if (ctx.action === 'update' && ctx.fields.length) return `Only ${ctx.fields.join(', ')} changed in ${ctx.collection}`;
 	return `${verb(ctx.action)} in ${ctx.collection}, rule says don't clear`;
 }

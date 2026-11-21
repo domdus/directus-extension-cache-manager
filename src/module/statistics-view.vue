@@ -29,7 +29,7 @@
 					The numbers live in memory. They start at zero when Directus restarts and are counted per process.
 				</p>
 				<p class="sidebar-text">
-					The <router-link to="/cache-manager/ignore-list">Ignore List</router-link> page looks back further: it counts changes in
+					The <router-link to="/cache-manager/analysis">Analysis</router-link> page looks back further: it counts changes in
 					the activity log.
 				</p>
 			</sidebar-detail>
@@ -40,8 +40,8 @@
 			<div v-if="!data && loading" class="loading"><v-progress-circular indeterminate /></div>
 
 			<template v-if="data">
-				<v-notice v-if="data.status.problems.length" type="warning" class="notice">
-					{{ data.status.problems.join('. ') }}.
+				<v-notice v-if="shownProblems.length" type="warning" class="notice">
+					{{ shownProblems.join('. ') }}.
 				</v-notice>
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="history" /></template>
@@ -205,6 +205,12 @@ import { formatBytes, formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
 const { data, loading, error, load } = useRules();
+// The restart notice (first problem without a restart) is about Granular mode: only when it is saved as the mode.
+const shownProblems = computed(() => {
+	const status = data.value?.status;
+	if (!status) return [];
+	return !status.installed && !data.value!.config.targeted ? status.problems.slice(1) : status.problems;
+});
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
 
 const topCollections = computed(() =>

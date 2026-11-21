@@ -119,13 +119,13 @@ test('parseHours clamps and falls back', () => {
 
 const collections = new Set(['view_counter', 'analytics_events', 'directus_activity']);
 
-test('validateInput accepts booleans, null and existing collections', () => {
-	assert.deepEqual(validateInput({ autoPurge: true, skipAllowed: null, ignoreList: [' view_counter ', 'view_counter', 'analytics_events'] }, collections), {
+test('validateInput accepts booleans and null; the ignore list is not saved anymore', () => {
+	assert.deepEqual(validateInput({ autoPurge: true, skipAllowed: null }, collections), {
 		ok: true,
-		value: { autoPurge: true, skipAllowed: null, ignoreList: ['view_counter', 'analytics_events'], ttl: null },
+		value: { autoPurge: true, skipAllowed: null, ignoreList: null, ttl: null },
 	});
 	assert.deepEqual(validateInput({}, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: null } });
-	assert.deepEqual(validateInput({ ignoreList: [] }, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: [], ttl: null } });
+	assert.deepEqual(validateInput({ ignoreList: null }, collections), { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: null } });
 });
 
 test('validateInput rejects bad types, unknown collections and unknown keys', () => {
@@ -136,9 +136,7 @@ test('validateInput rejects bad types, unknown collections and unknown keys', ()
 	};
 	assert.match(fail({ autoPurge: 'true' }).join(), /autoPurge must be/);
 	assert.match(fail({ skipAllowed: 1 }).join(), /skipAllowed must be/);
-	assert.match(fail({ ignoreList: 'view_counter' }).join(), /must be an array/);
-	assert.match(fail({ ignoreList: ['nope', 'view_counter', 'gone'] }).join(), /These collections do not exist in this project: nope, gone/);
-	assert.match(fail({ ignoreList: [42] }).join(), /non-empty strings/);
+	assert.match(fail({ ignoreList: ['view_counter'] }).join(), /rule that never clears/);
 	assert.match(fail({ cacheStore: 'redis' }).join(), /Unknown setting "cacheStore"/);
 	assert.match(fail(null).join(), /JSON object/);
 	assert.match(fail([1]).join(), /JSON object/);
@@ -161,7 +159,7 @@ test('toOverride stores only what differs from config', () => {
 	assert.deepEqual(toOverride(baseline, { autoPurge: true, skipAllowed: true, ignoreList: ['view_counter', 'directus_activity'], ttl: ' 1h ' }), {
 		autoPurge: null,
 		skipAllowed: true,
-		ignoreList: ['view_counter', 'directus_activity'],
+		ignoreList: null,
 		ttl: '1h',
 	});
 });
@@ -340,18 +338,24 @@ test('buildExport writes only the saved values', async () => {
 		extension: 'directus-extension-cache-manager',
 		format: 1,
 		exportedAt: '2026-11-20T08:00:00.000Z',
-		settings: { autoPurge: null, skipAllowed: true, ignoreList: ['view_counter'], ttl: '1h' },
+		settings: { autoPurge: null, skipAllowed: true, ignoreList: null, ttl: '1h' },
 		updatedAt: '2026-11-19T10:00:00.000Z',
 	});
 	assert.equal(buildExport(null).settings, null);
 });
 
 test('parseImport reads exported files and bare settings, with plain errors', async () => {
-	const { buildExport, parseImport, ImportError } = await import('./transfer');
+	const { buildExport, parseImport, parseImportIgnoreList, ImportError } = await import('./transfer');
 	const exported = JSON.stringify(buildExport({ autoPurge: false, skipAllowed: null, ignoreList: ['a'], ttl: null, updatedAt: null, updatedBy: 'u' }));
-	assert.deepEqual(parseImport(exported), { autoPurge: false, skipAllowed: null, ignoreList: ['a'], ttl: null });
+	// The ignore list is not exported anymore.
+	assert.deepEqual(parseImport(exported), { autoPurge: false, skipAllowed: null, ttl: null });
+	assert.deepEqual(parseImportIgnoreList(exported), []);
 	assert.deepEqual(parseImport(JSON.stringify(buildExport(null))), {});
-	assert.deepEqual(parseImport('{"ignoreList":["a"],"ttl":"2h","updatedBy":"x"}'), { ignoreList: ['a'], ttl: '2h' });
+	// Files from older versions: the ignore list is split off and becomes rules.
+	assert.deepEqual(parseImport('{"ignoreList":["a"],"ttl":"2h","updatedBy":"x"}'), { ttl: '2h' });
+	assert.deepEqual(parseImportIgnoreList('{"ignoreList":[" a ","a","b"],"ttl":"2h"}'), ['a', 'b']);
+	assert.deepEqual(parseImportIgnoreList('{"extension":"directus-extension-cache-manager","settings":{"ignoreList":["c"]}}'), ['c']);
+	assert.deepEqual(parseImport('{"ignoreList":["a"]}'), {});
 	// Unknown keys next to known ones reach /apply, which names them.
 	assert.deepEqual(parseImport('{"ttl":"2h","store":"redis"}'), { ttl: '2h', store: 'redis' });
 
@@ -364,9 +368,8 @@ test('parseImport reads exported files and bare settings, with plain errors', as
 	fails('{"extension":"directus-extension-cache-manager","settings":"x"}', /does not contain/);
 
 	// The imported body goes through the same validation as Save & apply.
-	const result = validateInput(parseImport('{"ignoreList":["missing"]}'), new Set(['a']));
+	const result = validateInput(parseImport('{"ttl":"soon"}'), new Set(['a']));
 	assert.equal(result.ok, false);
-	assert.match(result.ok ? '' : result.errors.join(), /This collection does not exist in this project: missing/);
 });
 
 test('anyWriteMinutes counts minutes with any change, ignored or not', () => {
@@ -463,17 +466,20 @@ test('rowState shows the state in use and what Save & apply will change', async 
 
 test('selectionChanges splits the selection into what each action changes', async () => {
 	const { selectionChanges } = await import('./selection');
-	assert.deepEqual(selectionChanges(['a', 'b', 'c', 'a'], ['b']), { toIgnore: ['a', 'c'], toStop: ['b'] });
-	assert.deepEqual(selectionChanges([], ['b']), { toIgnore: [], toStop: [] });
-	assert.deepEqual(selectionChanges(['b'], ['b']), { toIgnore: [], toStop: ['b'] });
+	assert.deepEqual(selectionChanges(['a', 'b', 'c', 'a'], new Set(['b'])), { toKeep: ['a', 'c'], toClear: ['b'] });
+	assert.deepEqual(selectionChanges([], new Set(['b'])), { toKeep: [], toClear: [] });
+	assert.deepEqual(selectionChanges(['b'], new Set(['b'])), { toKeep: [], toClear: ['b'] });
+	// Configured collections can't be changed on the page.
+	assert.deepEqual(selectionChanges(['a', 'cfg'], new Set(['cfg']), new Set(['cfg'])), { toKeep: ['a'], toClear: [] });
 });
 
 test('pendingChanges lists each unsaved change; saveBarText counts them', async () => {
 	const { pendingChanges, saveBarText } = await import('./pending');
 	const effective: CacheValues = { autoPurge: true, skipAllowed: false, ignoreList: ['a', 'b'], ttl: '5m' };
 	assert.deepEqual(pendingChanges({ ...effective, ignoreList: ['b', 'a'], ttl: '300000' }, effective), []);
-	assert.deepEqual(pendingChanges({ autoPurge: false, skipAllowed: true, ignoreList: ['a', 'c'], ttl: '1h' }, effective).length, 5);
-	assert.deepEqual(pendingChanges({ ...effective, ignoreList: ['a', 'c', 'd'] }, effective), ['ignore c, d', 'stop ignoring b']);
+	assert.deepEqual(pendingChanges({ autoPurge: false, skipAllowed: true, ignoreList: ['a', 'c'], ttl: '1h' }, effective).length, 3);
+	// The ignore list is not edited here anymore.
+	assert.deepEqual(pendingChanges({ ...effective, ignoreList: ['a', 'c', 'd'] }, effective), []);
 	assert.deepEqual(pendingChanges(effective, null), []);
 	assert.deepEqual(saveBarText(0, true), { text: 'No unsaved changes', danger: false });
 	assert.deepEqual(saveBarText(1, true), { text: '1 unsaved change', danger: false });
@@ -501,4 +507,16 @@ test('export and import carry the clearing rules', async () => {
 	assert.deepEqual(parseImport(text), {});
 	assert.equal(parseImportRules(JSON.stringify(buildExport(null, new Date(), { targeted: false, collections: {} }))), undefined);
 	assert.equal(parseImportRules('{"ignoreList":["a"]}'), undefined);
+});
+
+test('rules that never clear replace the saved ignore list', async () => {
+	const { neverClears, neverClearCollections, withNeverClear, DEFAULT_RULES } = await import('./rules');
+	const config = withNeverClear(
+		{ ...DEFAULT_RULES, collections: { views: { create: true, update: true, delete: true, skipFields: ['count'], ttl: '1h' } } },
+		['views', 'logs'],
+	);
+	assert.deepEqual(config.collections['views'], { create: false, update: false, delete: false, skipFields: ['count'], ttl: '1h' });
+	assert.equal(neverClears(config.collections['logs']), true);
+	assert.equal(neverClears({ create: false, update: true, delete: false, skipFields: [], ttl: null }), false);
+	assert.deepEqual(neverClearCollections(config), ['logs', 'views']);
 });

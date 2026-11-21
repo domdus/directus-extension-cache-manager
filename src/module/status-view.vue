@@ -28,7 +28,7 @@
 			</sidebar-detail>
 			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Auto Purge">
 				<p class="sidebar-text">
-					<strong>On:</strong> a change to a collection that is not ignored clears the whole cache. Everyone sees the
+					<strong>On:</strong> a change clears the whole cache, unless the collection is ignored or its rule never clears. Everyone sees the
 					change right away.
 				</p>
 				<p class="sidebar-text">
@@ -40,7 +40,7 @@
 				<p class="sidebar-text">
 					<strong>On:</strong> an app can ask for fresh data. It sends the header <code>Cache-Control: no-store</code>.
 				</p>
-				<p class="sidebar-text">Apps need this to read ignored collections up to date.</p>
+				<p class="sidebar-text">Apps need this to read collections up to date that don't clear the cache.</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on, if your Directus is not open to the public.</p>
 			</sidebar-detail>
 			<sidebar-detail id="ttl" icon="schedule" title="Cache Lifetime">
@@ -141,13 +141,12 @@
 					<div class="wide">
 						<setting-card
 							title="Ignored Collections"
-							description="Changes to these collections don't clear the cache."
+							description="Changes to these collections don't clear the cache. To keep more collections, add a rule that never clears."
 							env="CACHE_AUTO_PURGE_IGNORE_LIST"
 							:effective="state.effective.ignoreList"
-							:configured="state.baseline.ignoreList"
-							:override="state.stored?.ignoreList ?? null"
+							readonly
 						>
-							<v-button small secondary to="/cache-manager/ignore-list">Edit Ignore List</v-button>
+							<v-button small secondary to="/cache-manager/analysis">Open Analysis</v-button>
 						</setting-card>
 					</div>
 				</div>

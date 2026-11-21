@@ -19,7 +19,7 @@ import {
 	type ApiContext,
 } from '../api/state';
 import { applyRules, runtimeStatus } from '../api/targeted';
-import { DEFAULT_RULES, describeRules, isTargetable, validateRules } from '../shared/rules';
+import { DEFAULT_RULES, describeRules, isTargetable, neverClearCollections, validateRules } from '../shared/rules';
 
 class HttpError extends Error {
 	constructor(
@@ -142,7 +142,8 @@ export default defineEndpoint({
 					windowMinutes,
 					from,
 					to: new Date(),
-					ignoreList: effective.ignoreList,
+					// Kept: the configured ignore list plus collections whose rule never clears.
+					ignoreList: [...new Set([...effective.ignoreList, ...neverClearCollections(await readRules(database))])],
 					autoPurge: effective.autoPurge,
 					editorHeuristic: Boolean(origin),
 					candidate,

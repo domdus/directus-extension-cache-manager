@@ -20,11 +20,17 @@ export const ROW_STATE_LABELS: Record<RowState, string> = {
 	'will-clear': 'Will clear cache',
 };
 
-/** Which selected collections "Ignore selected" and "Stop ignoring selected" would change in the draft. */
-export function selectionChanges(selected: string[], draftIgnored: string[]): { toIgnore: string[]; toStop: string[] } {
-	const draft = new Set(draftIgnored);
-	const unique = [...new Set(selected)];
-	return { toIgnore: unique.filter((name) => !draft.has(name)), toStop: unique.filter((name) => draft.has(name)) };
+/**
+ * Which selected collections "Never clear selected" and "Clear again" would change in the draft. Collections on the
+ * configured ignore list can't be changed here.
+ */
+export function selectionChanges(
+	selected: string[],
+	draftKept: Set<string>,
+	configured: Set<string> = new Set(),
+): { toKeep: string[]; toClear: string[] } {
+	const unique = [...new Set(selected)].filter((name) => !configured.has(name));
+	return { toKeep: unique.filter((name) => !draftKept.has(name)), toClear: unique.filter((name) => draftKept.has(name)) };
 }
 
 /**
@@ -53,6 +59,6 @@ export function looksSensitive(collection: string): boolean {
 export function suggestionTooltip(collection: string, ttl: string): string {
 	const age = ttl ? `up to ${formatDurationLabel(ttl)}` : 'until the cache expires';
 	return looksSensitive(collection)
-		? `${collection} changes often, but its name suggests apps decide on it (access, payments, purchases). Only ignore it after every app that needs it up to date reads it with Cache-Control: no-store. Otherwise they get answers ${age} old.`
-		: `${collection} changes often. Ignored collections can be ${age} old for apps that don't ask for fresh data (Cache-Control: no-store).`;
+		? `${collection} changes often, but its name suggests apps decide on it (access, payments, purchases). Only stop clearing for it after every app that needs it up to date reads it with Cache-Control: no-store. Otherwise they get answers ${age} old.`
+		: `${collection} changes often. Collections that never clear can be ${age} old for apps that don't ask for fresh data (Cache-Control: no-store).`;
 }

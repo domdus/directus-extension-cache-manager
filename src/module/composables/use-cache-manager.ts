@@ -1,9 +1,9 @@
 import { useApi } from '@directus/extensions-sdk';
 import { computed, reactive, ref } from 'vue';
-import { purgeMinutes, type Analysis } from '../../shared/analysis';
+import type { Analysis } from '../../shared/analysis';
 import { DEFAULT_HOURS, EXTENSION_ID } from '../../shared/constants';
 import { isValidTtl } from '../../shared/duration';
-import { sameList, sameValues, toOverride, type CacheValues, type StoredOverride } from '../../shared/settings';
+import { sameValues, toOverride, type CacheValues, type StoredOverride } from '../../shared/settings';
 
 export type CacheState = {
 	baseline: CacheValues;
@@ -19,8 +19,7 @@ export type CacheState = {
 const base = `/${EXTENSION_ID}`;
 
 /*
- * Module-level state: Status and Analysis share one draft. A selection made on Analysis is still there on
- * Status (and the other way round), and Save & apply on either page saves all of it.
+ * Module-level state: every page sees the same settings and the same analysis (Status, Analysis, Settings).
  */
 const state = ref<CacheState | null>(null);
 const analysis = ref<Analysis | null>(null);
@@ -53,9 +52,6 @@ export function useCacheManager() {
 	const ttlValid = computed(() => isValidTtl(draft.ttl));
 	/** Something changed and every value can be saved. */
 	const canSave = computed(() => dirty.value && ttlValid.value);
-	const listDirty = computed(() => !!state.value && !sameList(draft.ignoreList, state.value.effective.ignoreList));
-	const draftSet = computed(() => new Set(draft.ignoreList));
-	const whatIf = computed(() => (analysis.value ? purgeMinutes(analysis.value.minuteSets, draft.ignoreList, draft.autoPurge) : 0));
 
 	async function loadState(force = false) {
 		if (state.value && !force) return;
@@ -154,19 +150,10 @@ export function useCacheManager() {
 		}
 	}
 
-	function toggle(collection: string, on: boolean) {
-		draft.ignoreList = on ? [...new Set([...draft.ignoreList, collection])] : draft.ignoreList.filter((name) => name !== collection);
-	}
-
-	function add(collections: string[]) {
-		draft.ignoreList = [...new Set([...draft.ignoreList, ...collections])];
-	}
-
 	return {
 		state,
 		analysis,
 		draft,
-		draftSet,
 		hours,
 		loadingState,
 		loadingAnalysis,
@@ -175,8 +162,6 @@ export function useCacheManager() {
 		dirty,
 		canSave,
 		ttlValid,
-		listDirty,
-		whatIf,
 		error,
 		message,
 		loadState,
@@ -184,8 +169,6 @@ export function useCacheManager() {
 		save,
 		reset,
 		discard: resetDraft,
-		toggle,
-		add,
 		importSettings,
 		cleanup,
 	};

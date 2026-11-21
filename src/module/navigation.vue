@@ -14,10 +14,10 @@
 			</v-list-item-content>
 		</v-list-item>
 
-		<v-list-item to="/cache-manager/ignore-list">
-			<v-list-item-icon><v-icon name="playlist_remove" /></v-list-item-icon>
+		<v-list-item to="/cache-manager/analysis">
+			<v-list-item-icon><v-icon name="insights" /></v-list-item-icon>
 			<v-list-item-content>
-				<v-text-overflow text="Ignore List" />
+				<v-text-overflow text="Analysis" />
 			</v-list-item-content>
 		</v-list-item>
 

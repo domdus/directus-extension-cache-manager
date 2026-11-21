@@ -63,10 +63,13 @@
 			<div v-if="!data && loading" class="loading"><v-progress-circular indeterminate /></div>
 
 			<template v-if="data">
-				<v-notice v-if="data.status.problems.length" type="warning" class="notice">
-					{{ data.status.problems.join('. ') }}.
+				<v-notice v-if="shownProblems.length" type="warning" class="notice">
+					{{ shownProblems.join('. ') }}.
 					<!-- The restart text says itself what still works; other problems mean Granular can't run at all. -->
-					<template v-if="data.status.problems.length > (data.status.installed ? 0 : 1)">Directus clears the whole cache as usual.</template>
+					<template v-if="otherProblems.length">Directus clears the whole cache as usual.</template>
+				</v-notice>
+				<v-notice v-else-if="restartForLifetimes" type="warning" class="notice">
+					Restart Directus once so lifetimes per collection apply.
 				</v-notice>
 				<v-notice v-else-if="!data.status.autoPurge" type="info" class="notice">
 					Auto Purge is off on the <router-link to="/cache-manager">Status</router-link> page, so changes don't clear
@@ -193,7 +196,11 @@
 									<span class="row-hint">{{ describeRule(draft.collections[name]!) }}</span>
 								</td>
 								<template v-if="ignored.has(name)">
-									<td colspan="4" class="subdued">On the Ignore List: changes never clear the cache.</td>
+									<td colspan="4" class="subdued">
+										<v-icon name="playlist_remove" small />
+										On the ignore list in the Directus configuration (CACHE_AUTO_PURGE_IGNORE_LIST): changes never
+										clear the cache. The lifetime still applies.
+									</td>
 								</template>
 								<template v-else>
 									<td v-for="action in actions" :key="action" class="center">
@@ -258,6 +265,17 @@ const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, 
 const actions = ['create', 'update', 'delete'] as const;
 
 const ruleNames = computed(() => Object.keys(draft.collections).sort());
+
+/**
+ * Without a restart, the first problem is the restart notice (status.installed is false). It is about Granular mode,
+ * so it only shows while Granular is selected; in Whole Cache mode only lifetimes per collection need the restart.
+ */
+const restartNeeded = computed(() => !!data.value && !data.value.status.installed);
+const otherProblems = computed(() => (data.value?.status.problems ?? []).slice(restartNeeded.value ? 1 : 0));
+const shownProblems = computed(() => (restartNeeded.value && draft.targeted ? data.value!.status.problems : otherProblems.value));
+const restartForLifetimes = computed(
+	() => restartNeeded.value && !draft.targeted && Object.values(draft.collections).some((rule) => rule.ttl),
+);
 /** The filter shows up once the list gets long. */
 const FILTER_FROM = 5;
 const filter = ref('');

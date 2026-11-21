@@ -109,7 +109,8 @@ import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 import { EXTENSION_ID, SETTINGS_FIELD } from '../shared/constants';
 import { EXTENSION_GITHUB_URL, EXTENSION_MARKETPLACE_UID, EXTENSION_NPM_URL, EXTENSION_PACKAGE_NAME } from '../shared/extension-meta';
-import { buildExport, parseImport, parseImportRules } from '../shared/transfer';
+import { buildExport, parseImport, parseImportIgnoreList, parseImportRules } from '../shared/transfer';
+import { parseRules, withNeverClear } from '../shared/rules';
 
 const api = useApi();
 const pageClass = usePageClass();
@@ -272,7 +273,15 @@ async function onImportFile(event: Event) {
 	try {
 		const text = await file.text();
 		const body = parseImport(text);
-		const rules = parseImportRules(text);
+		let rules = parseImportRules(text);
+		// Files from older versions have an ignore list: its entries become rules that never clear.
+		const configured = state.value?.baseline.ignoreList ?? [];
+		const known = new Set(state.value?.collections ?? []);
+		const ignored = parseImportIgnoreList(text).filter((name) => !configured.includes(name) && known.has(name));
+		if (ignored.length) {
+			const current = rules !== undefined ? parseRules(rules) : parseRules((await api.get(`/${EXTENSION_ID}/rules`)).data?.config);
+			rules = withNeverClear(current, ignored);
+		}
 		await importSettings(body);
 		if (rules !== undefined) {
 			try {
