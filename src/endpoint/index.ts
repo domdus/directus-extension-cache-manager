@@ -18,7 +18,7 @@ import {
 	writeStored,
 	type ApiContext,
 } from '../api/state';
-import { applyRules, runtimeStatus } from '../api/targeted';
+import { applyRules, statusWithFreshSize } from '../api/targeted';
 import { DEFAULT_RULES, describeRules, isTargetable, neverClearCollections, validateRules } from '../shared/rules';
 
 class HttpError extends Error {
@@ -197,7 +197,7 @@ export default defineEndpoint({
 			const effective = readValues(env);
 			return {
 				config: await readRules(database),
-				status: runtimeStatus(env),
+				status: await statusWithFreshSize(env),
 				globalTtl: effective.ttl,
 				ignoreList: effective.ignoreList,
 				collections: Object.keys(fields)

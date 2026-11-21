@@ -5,14 +5,15 @@
 			v-tooltip.bottom="'Discard Changes'"
 			rounded
 			icon
+			small
 			secondary
 			:disabled="!dirty || saving"
 			@click="discard"
 		>
-			<v-icon name="undo" />
+			<v-icon name="undo" small />
 		</v-button>
-		<v-button v-tooltip.bottom="saveTooltip" rounded icon :loading="saving" :disabled="!canSave || busy" @click="save">
-			<v-icon name="check" />
+		<v-button v-tooltip.bottom="saveTooltip" rounded icon small :loading="saving" :disabled="!canSave || busy" @click="save">
+			<v-icon name="check" small />
 		</v-button>
 	</template>
 </template>

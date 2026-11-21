@@ -9,8 +9,8 @@
 		</template>
 
 		<template #actions>
-			<v-button v-tooltip.bottom="'Refresh'" rounded icon secondary :loading="loading" @click="load">
-				<v-icon name="refresh" />
+			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loading" @click="load">
+				<v-icon name="refresh" small />
 			</v-button>
 		</template>
 
@@ -147,23 +147,11 @@
 							</span>
 						</div>
 						<div class="stat">
-							<span class="stat-value">{{ formatBytes(data.status.size.expiredBytes) }}</span>
-							<span class="stat-label">
-								Expired
-								<v-icon
-									v-tooltip.top="`${formatNumber(data.status.size.expired)} expired ${data.status.size.expired === 1 ? 'entry' : 'entries'} waiting. The extension deletes them every minute.`"
-									name="help_outline"
-									small
-									class="stat-info"
-								/>
-							</span>
-						</div>
-						<div class="stat">
 							<span class="stat-value">{{ formatBytes(data.status.swept.bytes) }}</span>
 							<span class="stat-label">
 								Freed
 								<v-icon
-									v-tooltip.top="`${formatNumber(data.status.swept.entries)} expired ${data.status.swept.entries === 1 ? 'entry' : 'entries'} deleted since Directus started. Directus itself only deletes an expired entry when someone asks for it again.`"
+									v-tooltip.top="`${formatNumber(data.status.swept.entries)} expired ${data.status.swept.entries === 1 ? 'entry' : 'entries'} deleted since Directus started. Directus itself only deletes an expired entry when someone asks for it again. Cache Manager deletes them within about a minute.`"
 									name="help_outline"
 									small
 									class="stat-info"

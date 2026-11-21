@@ -9,14 +9,14 @@
 		</template>
 
 		<template #actions>
-			<v-button v-tooltip.bottom="'Refresh'" rounded icon secondary :loading="loadingAnalysis" :disabled="saving" @click="refresh">
-				<v-icon name="refresh" />
+			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loadingAnalysis" :disabled="saving" @click="refresh">
+				<v-icon name="refresh" small />
 			</v-button>
-			<v-button v-tooltip.bottom="'Discard Changes'" rounded icon secondary :disabled="!rulesDirty || saving" @click="discard">
-				<v-icon name="undo" />
+			<v-button v-tooltip.bottom="'Discard Changes'" rounded icon small secondary :disabled="!rulesDirty || saving" @click="discard">
+				<v-icon name="undo" small />
 			</v-button>
-			<v-button v-tooltip.bottom="saveText" rounded icon :loading="saving" :disabled="!canSave" @click="save">
-				<v-icon name="check" />
+			<v-button v-tooltip.bottom="saveText" rounded icon small :loading="saving" :disabled="!canSave" @click="save">
+				<v-icon name="check" small />
 			</v-button>
 		</template>
 

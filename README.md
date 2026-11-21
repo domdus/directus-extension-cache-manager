@@ -136,6 +136,18 @@ An answer that was read just before a change but is stored just after it would b
 - **Tested with Directus 9.26, 10.13, 11.7, 11.17 and 12.5** (Postgres, memory cache). Because it relies on how Directus works inside, a future version may change that. If the extension can't attach, the page says so and Directus clears the whole cache as usual.
 - **Apps still need `Cache-Control: no-store`** for reads that must be up to date right away, for example access checks after a purchase.
 
+### Performance
+
+Measured on Directus 11.17 with Postgres and the memory cache, 24 parallel readers on 60 different list queries, while another collection was written 5 times per second (3–4 runs each, averaged):
+
+| | Without Cache Manager | Whole Cache | Granular |
+|---|---|---|---|
+| Reads answered from the cache | 16 % | 13 % | **100 %** |
+| Reads per second | 318 | 296 | **406** (+28 %) |
+| Median read time | 75 ms | 80 ms | **57 ms** (−24 %) |
+
+The extension's own work is within the run-to-run noise: cache hits and writes are as fast as without it, and an uncached read in Granular mode takes about 3 ms longer (working out which collections the answer uses). The gain grows with slower queries and a database on another server; this test used small tables on the same machine.
+
 ## How Analysis counts
 
 - A minute counts as "cleared" when at least one collection changed in it that is not on the configured ignore list and whose rule doesn't never clear. Rules that keep only some changes (one action off, Skip Fields) count as clearing, because the activity log doesn't show which fields changed. Several changes in the same minute count as one.
@@ -165,7 +177,7 @@ A collection is suggested for a rule that never clears when all of these are tru
 
 - **Not everything can be counted.** Collections without activity tracking and some Flow changes are not in the activity log, and Directus may delete old activity. The Analysis page says when this affects the numbers.
 - **Several servers.** Saving changes the settings on the server that handles the save. If Directus runs on several servers, restart the others after saving. They use the saved settings when they start. The Status page warns when the settings in use don't match.
-- **Expired answers in memory.** With `CACHE_STORE=memory`, Directus deletes an expired answer only when someone asks for it again. Answers nobody asks for again stay in memory until the whole cache is cleared. With Auto Purge on, that happened often; with Granular mode, rules that never clear or Auto Purge off, it may never happen. The extension therefore deletes expired entries from the memory store once a minute, in every mode. Redis removes them itself.
+- **Expired answers in memory.** With `CACHE_STORE=memory`, Directus (Keyv) deletes an expired answer only when someone asks for exactly that answer again; answers nobody asks for again stay in memory until the whole cache is cleared or Directus restarts. Frequent whole-cache clears used to hide this. With Granular mode, rules that never clear or Auto Purge off they are rare, so Cache Manager deletes expired entries itself, in every mode: it notes when each stored answer expires and, once a minute, only looks at the answers that are due (under 1 ms with 300,000 cached answers). The size for Statistics is measured in small chunks every few minutes, so Directus keeps answering requests in between. Redis removes expired entries itself.
 - **Saving clears the cache once**, because it writes to the project settings.
 - **Databases.** The Analysis page works with PostgreSQL and MySQL. On other databases it shows an error. The settings still work.
 - **Browsers and proxies.** When **Auto Purge** is off, Directus also tells browsers and proxies how long they may keep an answer. It uses the value of **Cache Lifetime** for that, so a new value also applies there for new answers.

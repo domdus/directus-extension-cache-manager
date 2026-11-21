@@ -3,8 +3,9 @@ import { ANY, collectionOfPath, filterDependencies, queryDependencies, type Sche
 import { parseDuration } from '../shared/duration';
 import { DEFAULT_RULE, DEFAULT_RULES, isTargetable, neverClears, ruleClears, ruleFor, ttlFor, type RulesConfig, type WriteAction } from '../shared/rules';
 import { TagIndex } from '../shared/tag-index';
+import { ExpiryQueue } from '../shared/expiry-queue';
 import { LOG_PREFIX } from '../shared/constants';
-import { answerSizeIn, measureStore, memoryStoreOf, storedSizeOf, type StoreSize, type SweepResult } from './store-size';
+import { ENTRY_OVERHEAD, measureStoreChunked, memoryStoreOf, storedSizeOf, storeKeyOf, sweepKeys, type StoreSize, type SweepResult } from './store-size';
 
 /**
  * Granular Cache: rules per collection and targeted clearing, hooked into Directus at runtime (no core patch):
@@ -95,6 +96,12 @@ type Runtime = {
 	recent: ClearEvent[];
 	swept: SweepResult;
 	history: HistoryBucket[];
+	/** Store keys (with namespace) by the minute they expire: the sweep only looks at the due ones. */
+	expiry: ExpiryQueue;
+	/** Last chunked measurement of the memory store, and when it ran. Statistics shows it instead of scanning. */
+	lastSize: StoreSize | null;
+	measuredAt: number;
+	measuring: Promise<void> | null;
 	pruneTimer: ReturnType<typeof setInterval> | null;
 	/**
 	 * Clear counter. An answer read before a write but stored after it would be stale until it expires (Directus core
@@ -109,7 +116,7 @@ type Runtime = {
 	handlers: {
 		clear: (cache: KeyvLike) => Promise<void>;
 		set: (cache: KeyvLike, key: string, value: unknown, ttl?: number) => Promise<unknown>;
-		tick: () => void;
+		tick: () => Promise<void>;
 	} | null;
 	env: Record<string, unknown>;
 	database: any;
@@ -143,8 +150,9 @@ export function runtime(): Runtime {
 	// An extension reload keeps the runtime of the older version (it lives on globalThis): add the fields it lacks.
 	if (rt !== fresh) {
 		for (const [field, value] of Object.entries(fresh)) if ((rt as any)[field] === undefined) (rt as any)[field] = value;
-		// The index object was made by the older code: give it the methods of this version (same data fields).
-		if (Object.getPrototypeOf(rt.index) !== TagIndex.prototype) Object.setPrototypeOf(rt.index, TagIndex.prototype);
+		// Objects made by the older code: copy the index into this version's class; the queue refills at the next measurement.
+		if (!(rt.index instanceof TagIndex)) rt.index = TagIndex.from(rt.index);
+		if (!(rt.expiry instanceof ExpiryQueue)) rt.expiry = new ExpiryQueue();
 	}
 	return rt;
 }
@@ -166,6 +174,10 @@ function freshRuntime(): Runtime {
 		recent: [],
 		swept: { entries: 0, bytes: 0 },
 		history: [],
+		expiry: new ExpiryQueue(),
+		lastSize: null,
+		measuredAt: 0,
+		measuring: null,
 		pruneTimer: null,
 		seq: 0,
 		fullClearedAt: 0,
@@ -283,6 +295,7 @@ async function fullClear(rt: Runtime, cache: KeyvLike, event: Omit<ClearEvent, '
 	rt.fullClearedAt = rt.anyClearedAt = rt.seq;
 	rt.clearedAt.clear();
 	rt.index.clear();
+	rt.expiry.clear();
 	rt.permissionDeps = null;
 	record(rt, { kind: 'full', removed: 0, ...event });
 }
@@ -363,13 +376,19 @@ export async function handleSet(rt: Runtime, cache: KeyvLike, key: string, value
 	const request = rt.requestContext.getStore();
 	if (request?.ttl) ttl = request.ttl;
 	const result = await rt.originals!.set.call(cache, key, value, ttl);
-	if (!rt.config.targeted || typeof key !== 'string') return result;
+	if (typeof key !== 'string') return result;
+	const expires = Date.now() + (ttl ?? globalTtlMs(rt.env));
+	// In every mode: the sweep deletes the entry when it expires (Keyv only does that when the key is read again).
+	if (memoryStoreOf(cache)) rt.expiry.add(storeKeyOf(cache, key), expires);
+	if (!rt.config.targeted) return result;
 	if (request && isStale(rt, request)) {
 		// Read before a change, stored after it: don't keep it.
 		await cache.delete(key);
 		return result;
 	}
-	if (!key.endsWith('__expires_at')) rt.index.add(key, request?.deps ?? new Set([ANY]), Date.now() + (ttl ?? globalTtlMs(rt.env)), key.length + storedSizeOf(value));
+	const bytes = storeKeyOf(cache, key).length + storedSizeOf(value) + ENTRY_OVERHEAD;
+	if (key.endsWith('__expires_at')) rt.index.addBytes(key.slice(0, -'__expires_at'.length), bytes);
+	else rt.index.add(key, request?.deps ?? new Set([ANY]), expires, bytes);
 	return result;
 }
 
@@ -482,32 +501,68 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 			ctx.logger.warn(error, `${LOG_PREFIX} could not reach the Directus cache`);
 		}
 	}
+	// First measurement; it also queues entries stored before the extension was running (reload without restart).
+	if (rt.cache) void measure(rt).catch((error) => ctx.logger.warn(error, `${LOG_PREFIX} could not measure the cache`));
 	if (!rt.cache) problems.push(ctx.env['CACHE_ENABLED'] === true ? 'The Directus cache could not be reached' : 'The cache is off (CACHE_ENABLED)');
 	rt.problems = problems;
 
 	// Replaced on every install: a timer of an older version (before a reload) would run its old code.
 	if (rt.pruneTimer) clearInterval(rt.pruneTimer);
-	rt.pruneTimer = setInterval(() => runtime().handlers?.tick(), 60_000);
+	rt.pruneTimer = setInterval(() => {
+		runtime()
+			.handlers?.tick()
+			.catch((error) => runtime().logger?.warn(error, `${LOG_PREFIX} cache cleanup failed`));
+	}, 60_000);
 	(rt.pruneTimer as any).unref?.();
 
 	await applyRules(config, 'startup');
 	if (problems.length) ctx.logger.warn(`${LOG_PREFIX} granular cache is limited: ${problems.join('; ')}`);
 }
 
+/** How often the chunked measurement runs on its own; Statistics can ask for one 10 seconds after the last. */
+const MEASURE_EVERY = 5 * 60_000;
+const MEASURE_ON_DEMAND = 10_000;
+
 /**
  * Every minute: forget expired answers in the index, delete expired entries from the memory store (Keyv only does
- * that when the key is read again) and note the store size for the history. Exported for tests.
+ * that when the key is read again) and, every few minutes, measure the store for the statistics. Only the keys whose
+ * expiry minute is over are looked at; the measurement runs in chunks. Exported for tests.
  */
-export function tick(rt: Runtime, now = Date.now()) {
+export async function tick(rt: Runtime, now = Date.now()) {
 	rt.index.prune(now);
+	currentBucket(rt, now);
 	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
-	const bucket = currentBucket(rt, now);
 	if (!store) return;
-	const { size, swept } = measureStore(store, now, true);
+	const swept = await sweepKeys(store, rt.expiry.takeDue(now), now, (key, expires) => rt.expiry.add(key, expires));
 	rt.swept.entries += swept.entries;
 	rt.swept.bytes += swept.bytes;
-	bucket.entries = Math.max(bucket.entries ?? 0, size.entries);
-	bucket.bytes = Math.max(bucket.bytes ?? 0, size.bytes);
+	if (now - rt.measuredAt >= MEASURE_EVERY) await measure(rt, now);
+}
+
+/**
+ * Measures the memory store in chunks. Also a safety net: deletes expired entries the queue did not know (stored before
+ * the extension was running) and queues the others. One measurement at a time.
+ */
+export function measure(rt: Runtime, now = Date.now()): Promise<void> {
+	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
+	if (!store) return Promise.resolve();
+	rt.measuring ??= (async () => {
+		try {
+			const { size, swept } = await measureStoreChunked(store, now, true, (key, expires) => {
+				if (expires !== null && !rt.expiry.has(key)) rt.expiry.add(key, expires);
+			});
+			rt.swept.entries += swept.entries;
+			rt.swept.bytes += swept.bytes;
+			rt.lastSize = size;
+			rt.measuredAt = now;
+			const bucket = currentBucket(rt, now);
+			bucket.entries = Math.max(bucket.entries ?? 0, size.entries);
+			bucket.bytes = Math.max(bucket.bytes ?? 0, size.bytes);
+		} finally {
+			rt.measuring = null;
+		}
+	})();
+	return rt.measuring;
 }
 
 /** Uses new rules. Turning targeted clearing on clears the cache once: older answers are not indexed. */
@@ -538,13 +593,9 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 	const rt = runtime();
 	const problems = [...rt.problems];
 	if (!rt.handlers || !rt.middlewareRegistered) problems.unshift(RESTART_PROBLEM);
-	const size = sizeNow(rt);
-	if (size) {
-		// The current hour shows the size right away, not only after the next sweep.
-		const bucket = currentBucket(rt);
-		bucket.entries = Math.max(bucket.entries ?? 0, size.entries);
-		bucket.bytes = Math.max(bucket.bytes ?? 0, size.bytes);
-	}
+	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
+	// The last chunked measurement (never a scan here; see statusWithFreshSize).
+	const size: StoreSize | null = store ? (rt.lastSize ?? { entries: 0, bytes: 0, expired: 0, expiredBytes: 0 }) : null;
 	return {
 		installed: !!rt.handlers && rt.middlewareRegistered,
 		problems,
@@ -559,19 +610,9 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		recent: [...rt.recent],
 		size,
 		swept: { ...rt.swept },
-		bytesByCollection: bytesByCollection(rt),
+		bytesByCollection: rt.index.bytes(),
 		history: lastDay(rt),
 	};
-}
-
-function bytesByCollection(rt: Runtime): Record<string, number> {
-	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
-	return store ? rt.index.bytes((key) => answerSizeIn(store, rt.cache, key)) : rt.index.bytes();
-}
-
-function sizeNow(rt: Runtime): StoreSize | null {
-	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
-	return store ? measureStore(store, Date.now(), false).size : null;
 }
 
 /** 24 hourly buckets ending with the current hour; hours without events are empty. */
@@ -583,6 +624,16 @@ function lastDay(rt: Runtime, now = Date.now()): HistoryBucket[] {
 		const hour = new Date(first + i * HOUR).toISOString();
 		return { ...(byHour.get(hour) ?? { hour, full: 0, targeted: 0, skipped: 0, entries: null, bytes: null }) };
 	});
+}
+
+/**
+ * runtimeStatus with a size at most 10 seconds old. The measurement runs in chunks, so waiting for it does not hold up
+ * other requests.
+ */
+export async function statusWithFreshSize(env?: Record<string, unknown>): Promise<RuntimeStatus> {
+	const rt = runtime();
+	if (Date.now() - rt.measuredAt >= MEASURE_ON_DEMAND) await measure(rt).catch(() => undefined);
+	return runtimeStatus(env);
 }
 
 /** For tests: a fresh runtime. */

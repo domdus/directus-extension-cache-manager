@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { collectionOfPath, queryDependencies, type SchemaLike } from '../shared/dependencies';
 import { parseRules, ruleClears, ttlFor, validateRules, DEFAULT_RULE, type RulesConfig } from '../shared/rules';
 import { TagIndex } from '../shared/tag-index';
-import { answerSizeIn, measureStore, memoryStoreOf, storedSizeOf } from './store-size';
-import { applyRules, currentBucket, describeRequest, tick, patchCache, patchItemsService, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
+import { measureStore, measureStoreChunked, memoryStoreOf, storedSizeOf, sweepKeys } from './store-size';
+import { ExpiryQueue } from '../shared/expiry-queue';
+import { applyRules, currentBucket, describeRequest, measure, tick, patchCache, patchItemsService, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
 
 /* ---------- schema used by the dependency tests ---------- */
 
@@ -126,13 +127,15 @@ test('validateRules checks collections, fields and durations; drops default rule
 
 test('TagIndex take, prune and counts', () => {
 	const index = new TagIndex();
-	index.add('k1', ['pages', 'services'], 100);
-	index.add('k2', ['visits'], 100);
-	index.add('k3', ['*'], 50);
+	index.add('k1', ['pages', 'services'], 60_000);
+	index.add('k2', ['visits'], 60_000);
+	index.add('k3', ['*'], 30_000);
 	assert.deepEqual(index.counts(), { pages: 1, services: 1, visits: 1, '*': 1 });
 	assert.deepEqual(index.take(['services', '*']).sort(), ['k1', 'k3']);
 	assert.equal(index.size, 1);
-	assert.equal(index.prune(200), 1);
+	// Found at the next minute boundary after the expiry.
+	assert.equal(index.prune(59_000), 0);
+	assert.equal(index.prune(120_000), 1);
 	assert.equal(index.size, 0);
 });
 
@@ -417,32 +420,88 @@ test('store size: finds the Map of Keyv 4 and 5, not of Redis', () => {
 	assert.equal(storedSizeOf(Buffer.alloc(3)), 4);
 });
 
-test('store size: an answer counts with its namespace and its __expires_at entry', () => {
-	const store = new Map<string, unknown>([
-		['ns:abc', '1234567890'],
-		['ns:abc__expires_at', '12345'],
-	]);
-	const keyv = { opts: { namespace: 'ns' } };
-	assert.equal(answerSizeIn(store, keyv, 'abc'), 'ns:abc'.length + 10 + 'ns:abc__expires_at'.length + 5);
-	assert.equal(answerSizeIn(store, keyv, 'missing'), null);
+test('expiry queue: only the keys whose minute is over come out, once', () => {
+	const queue = new ExpiryQueue();
+	const t = Date.parse('2026-01-01T10:00:00Z');
+	queue.add('a', t + 30_000);
+	queue.add('b', t + 90_000);
+	queue.add('c', t + 30_000);
+	queue.add('c', t + 600_000); // stored again: moves
+	assert.equal(queue.size, 3);
+	assert.deepEqual(queue.takeDue(t + 59_000), []);
+	assert.deepEqual(queue.takeDue(t + 60_000), ['a']);
+	assert.deepEqual(queue.takeDue(t + 120_000), ['b']);
+	queue.remove('c');
+	assert.deepEqual(queue.takeDue(t + 3_600_000), []);
+	assert.equal(queue.size, 0);
 });
 
-test('tick: sweeps expired entries from the memory store and notes the size per hour', async () => {
+test('sweep: deletes due keys that are expired, requeues the ones stored again, in chunks', async () => {
+	const now = Date.now();
+	const store = new Map<string, unknown>([
+		['old', JSON.stringify({ value: 'x', expires: now - 1 })],
+		['again', JSON.stringify({ value: 'y', expires: now + 60_000 })],
+	]);
+	const requeued: string[] = [];
+	const swept = await sweepKeys(store, ['old', 'again', 'gone'], now, (key) => requeued.push(key), 1);
+	assert.equal(swept.entries, 1);
+	assert.deepEqual([...store.keys()], ['again']);
+	assert.deepEqual(requeued, ['again']);
+
+	// The chunked measurement gives the same numbers as the one-pass version.
+	const many = new Map<string, unknown>();
+	for (let i = 0; i < 25; i++) many.set(`k${i}`, JSON.stringify({ value: 'v'.repeat(i), expires: now + (i % 5 === 0 ? -1 : 60_000) }));
+	const copy = new Map(many);
+	const chunked = await measureStoreChunked(many, now, true, undefined, 4);
+	const once = measureStore(copy, now, true);
+	assert.deepEqual(chunked, once);
+});
+
+test('tick: sweeps only queued keys whose minute is over; Statistics shows the last measurement', async () => {
 	const rt = await setup({ targeted: true, collections: {} });
 	const store = new Map<string, unknown>();
 	(cache as any).store = store;
 	const now = Date.now();
 	store.set('k:old', JSON.stringify({ value: 'x'.repeat(100), expires: now - 1 }));
-	store.set('k:new', JSON.stringify({ value: 'y', expires: now + 60_000 }));
-	assert.equal(runtimeStatus(env).size?.expired, 1);
+	store.set('k:new', JSON.stringify({ value: 'y', expires: now + 120_000 }));
+	rt.expiry.add('k:old', now - 1);
+	rt.expiry.add('k:new', now + 120_000);
 
-	tick(rt, now);
+	await tick(rt, now);
+	assert.deepEqual([...store.keys()], ['k:new']);
 	const status = runtimeStatus(env);
 	assert.equal(status.swept.entries, 1);
-	assert.equal(status.size?.entries, 1);
+	assert.equal(status.size?.entries, 1, 'measured after the sweep');
 	assert.equal(status.history.length, 24);
-	assert.equal(status.history[23].entries, 2, 'the largest size in the hour, before the sweep');
+	assert.equal(status.history[23].entries, 1);
 	assert.ok(status.history[23].full >= 1, 'the switch to Granular counts as a whole-cache clear');
+
+	// An entry the queue did not know (stored before the extension ran) is caught by the measurement.
+	store.set('k:unknown', JSON.stringify({ value: 'z', expires: now - 1 }));
+	await measure(rt, now + 1);
+	assert.equal(store.has('k:unknown'), false);
+	assert.equal(runtimeStatus(env).swept.entries, 2);
+});
+
+test('stored answers are queued in every mode; a whole-cache clear empties the queue', async () => {
+	const rt = await setup({ targeted: false, collections: {} });
+	await (cache as any).set('answer', 'value', 1000);
+	assert.equal(rt.expiry.has('answer'), true);
+	await (cache as any).clear();
+	assert.equal(rt.expiry.size, 0);
+});
+
+test('index: bytes per collection are running totals, prune only looks at due keys', () => {
+	const index = new TagIndex();
+	const t = Date.parse('2026-01-01T10:00:00Z');
+	index.add('a', ['pages', 'services'], t + 30_000, 100);
+	index.add('b', ['pages'], t + 600_000, 50);
+	index.addBytes('a', 10);
+	assert.deepEqual(index.bytes(), { pages: 160, services: 110 });
+	assert.equal(index.prune(t + 60_000), 1);
+	assert.deepEqual(index.bytes(), { pages: 50 });
+	index.remove('b');
+	assert.deepEqual(index.bytes(), {});
 });
 
 test('history: one bucket per hour, at most 24', async () => {

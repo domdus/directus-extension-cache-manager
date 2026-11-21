@@ -1,3 +1,4 @@
+import { yieldToEventLoop } from '../shared/expiry-queue';
 /**
  * Size of Directus' response cache when it is kept in memory (CACHE_STORE=memory).
  *
@@ -34,15 +35,11 @@ export function storeKeyOf(cache: unknown, key: string): string {
 	return typeof namespace === 'string' && namespace ? `${namespace}:${key}` : key;
 }
 
-/** What an answer takes in the store: its entry plus the small `__expires_at` entry next to it. Null: not there. */
-export function answerSizeIn(store: MapLike, cache: unknown, key: string): number | null {
-	const main = storeKeyOf(cache, key);
-	const stored = store.get(main);
-	if (stored === undefined) return null;
-	const expiresKey = `${main}__expires_at`;
-	const expires = store.get(expiresKey);
-	return main.length + sizeOf(stored) + (expires === undefined ? 0 : expiresKey.length + sizeOf(expires));
-}
+/**
+ * Characters Keyv adds around a stored value: the JSON wrapper {"value":"…","expires":1234567890123}. With the key and
+ * the namespace prefix this gives about the size an entry takes in the memory store.
+ */
+export const ENTRY_OVERHEAD = 40;
 
 const EXPIRES = '"expires":';
 
@@ -104,4 +101,79 @@ export function measureStore(store: MapLike, now: number, sweep: boolean): { siz
 		size.bytes += bytes;
 	}
 	return { size, swept };
+}
+
+/** Entries per chunk of the chunked pass: about 0.5 ms of work, then Directus can answer requests again. */
+export const CHUNK = 2000;
+
+/**
+ * Like measureStore, in chunks: Directus answers other requests between them, so a large store causes no noticeable
+ * pause. `onLive` gets every entry that stays (key and expiry), so the caller can queue the ones it did not know yet.
+ */
+export async function measureStoreChunked(
+	store: MapLike,
+	now: number,
+	sweep: boolean,
+	onLive?: (key: string, expires: number | null) => void,
+	chunk = CHUNK,
+): Promise<{ size: StoreSize; swept: SweepResult }> {
+	const size: StoreSize = { entries: 0, bytes: 0, expired: 0, expiredBytes: 0 };
+	const swept: SweepResult = { entries: 0, bytes: 0 };
+	let inChunk = 0;
+	// A Map iterator stays valid while entries are added or deleted between chunks.
+	for (const [key, stored] of store) {
+		const bytes = key.length + sizeOf(stored);
+		const expires = expiresOf(stored);
+		if (expires !== null && expires <= now) {
+			if (sweep) {
+				store.delete(key);
+				swept.entries++;
+				swept.bytes += bytes;
+			} else {
+				size.expired++;
+				size.expiredBytes += bytes;
+				size.entries++;
+				size.bytes += bytes;
+			}
+		} else {
+			size.entries++;
+			size.bytes += bytes;
+			onLive?.(key, expires);
+		}
+		if (++inChunk >= chunk) {
+			inChunk = 0;
+			await yieldToEventLoop();
+		}
+	}
+	return { size, swept };
+}
+
+/**
+ * Deletes the given keys from the store when they are expired. Keys that were stored again since get their new expiry
+ * through `requeue`. In chunks, like measureStoreChunked.
+ */
+export async function sweepKeys(
+	store: MapLike,
+	keys: string[],
+	now: number,
+	requeue: (key: string, expires: number) => void,
+	chunk = CHUNK,
+): Promise<SweepResult> {
+	const swept: SweepResult = { entries: 0, bytes: 0 };
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]!;
+		const stored = store.get(key);
+		if (stored !== undefined) {
+			const expires = expiresOf(stored);
+			if (expires !== null && expires <= now) {
+				swept.entries++;
+				swept.bytes += key.length + sizeOf(stored);
+				store.delete(key);
+			} else if (expires !== null) {
+				requeue(key, expires);
+			}
+		}
+		if ((i + 1) % chunk === 0) await yieldToEventLoop();
+	}
+	return swept;
 }

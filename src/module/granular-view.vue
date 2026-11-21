@@ -9,14 +9,14 @@
 		</template>
 
 		<template #actions>
-			<v-button v-tooltip.bottom="'Refresh'" rounded icon secondary :loading="loading" :disabled="saving" @click="load">
-				<v-icon name="refresh" />
+			<v-button v-tooltip.bottom="'Refresh'" rounded icon small secondary :loading="loading" :disabled="saving" @click="load">
+				<v-icon name="refresh" small />
 			</v-button>
-			<v-button v-tooltip.bottom="'Discard Changes'" rounded icon secondary :disabled="!dirty || saving" @click="discard">
-				<v-icon name="undo" />
+			<v-button v-tooltip.bottom="'Discard Changes'" rounded icon small secondary :disabled="!dirty || saving" @click="discard">
+				<v-icon name="undo" small />
 			</v-button>
-			<v-button v-tooltip.bottom="saveText" rounded icon :loading="saving" :disabled="!canSave || loading" @click="save">
-				<v-icon name="check" />
+			<v-button v-tooltip.bottom="saveText" rounded icon small :loading="saving" :disabled="!canSave || loading" @click="save">
+				<v-icon name="check" small />
 			</v-button>
 		</template>
 
@@ -463,7 +463,7 @@ code {
 	font-size: 0.9em;
 }
 .after-choice {
-	margin: 12px 0 0;
+	margin: 24px 0 0;
 }
 .after-choice a {
 	color: var(--theme--primary, var(--primary));
