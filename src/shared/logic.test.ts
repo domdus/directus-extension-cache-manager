@@ -454,10 +454,10 @@ test('pendingChanges lists each unsaved change; saveBarText counts them', async 
 
 test('sensitive collection names get a warning on suggestions', async () => {
 	const { looksSensitive, suggestionTooltip } = await import('./selection');
-	for (const name of ['subscriptions', 'checkout_sessions', 'payments', 'order_history', 'transactions', 'user_licenses']) {
+	for (const name of ['subscriptions', 'checkout_sessions', 'payments', 'order_history', 'transactions', 'user_licenses', 'memberships', 'vip_status', 'carts', 'tickets', 'premium_plans']) {
 		assert.equal(looksSensitive(name), true, name);
 	}
-	for (const name of ['visits', 'com_videos', 'com_views', 'searches', 'errors']) {
+	for (const name of ['visits', 'com_videos', 'com_views', 'searches', 'errors', 'cartoons', 'authors', 'pages']) {
 		assert.equal(looksSensitive(name), false, name);
 	}
 	assert.match(suggestionTooltip('subscriptions', '12h'), /Cache-Control: no-store.*up to 12h old/);
