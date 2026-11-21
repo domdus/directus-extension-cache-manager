@@ -376,7 +376,7 @@ test('status: restart needed without the request middleware; targeted then clear
 	const status = runtimeStatus({ CACHE_ENABLED: 'true', CACHE_AUTO_PURGE: true, CACHE_STORE: 'memory' });
 	assert.equal(status.installed, false);
 	assert.equal(status.targetedActive, false);
-	assert.match(status.problems[0]!, /Restart Directus/);
+	assert.match(status.problems[0]!, /restart Directus once/i);
 	assert.equal(status.cacheEnabled, true, 'string "true" counts as on');
 	assert.equal(status.autoPurge, true);
 	const before = cache.clears;

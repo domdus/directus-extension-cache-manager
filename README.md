@@ -131,7 +131,7 @@ An answer that was read just before a change but is stored just after it would b
 
 ### Requirements
 
-- **Restart Directus after installing or updating the extension.** Directus reloads an updated extension without a restart, but Granular Cache can only hook into the request handling at startup. Until the restart, the page says so, rules per collection already work, and Granular clears the whole cache.
+- **Restart Directus after installing or updating the extension.** Directus reloads an updated extension without a restart, but Granular Cache can only hook into the request handling at startup. The page shows a notice until the restart. Until then, a change clears the whole cache, not just its collection. Lifetimes per collection don't apply yet. Rules that keep the cache (unticked actions, Skip Fields) already work.
 - **One Directus process.** The list of which answer uses which collection lives in memory. With several processes (which need Redis anyway), use **Whole Cache**. The page warns when the cache is kept in Redis.
 - **Tested with Directus 9.26, 10.13, 11.7, 11.17 and 12.5** (Postgres, memory cache). Because it relies on how Directus works inside, a future version may change that. If the extension can't attach, the page says so and Directus clears the whole cache as usual.
 - **Apps still need `Cache-Control: no-store`** for reads that must be up to date right away, for example access checks after a purchase.

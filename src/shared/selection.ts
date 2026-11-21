@@ -1,3 +1,5 @@
+import { formatDurationLabel } from './duration';
+
 /** What the Status column shows: the state in use now, or what Save & Apply will change. */
 export type RowState = 'ignored' | 'clears' | 'unmeasured' | 'will-ignore' | 'will-clear';
 
@@ -49,7 +51,7 @@ export function looksSensitive(collection: string): boolean {
 
 /** Tooltip for a suggested collection. */
 export function suggestionTooltip(collection: string, ttl: string): string {
-	const age = ttl ? `up to ${ttl}` : 'until the cache expires';
+	const age = ttl ? `up to ${formatDurationLabel(ttl)}` : 'until the cache expires';
 	return looksSensitive(collection)
 		? `${collection} changes often, but its name suggests apps decide on it (access, payments, purchases). Only ignore it after every app that needs it up to date reads it with Cache-Control: no-store. Otherwise they get answers ${age} old.`
 		: `${collection} changes often. Ignored collections can be ${age} old for apps that don't ask for fresh data (Cache-Control: no-store).`;

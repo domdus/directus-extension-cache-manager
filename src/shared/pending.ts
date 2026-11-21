@@ -1,4 +1,4 @@
-import { durationText, sameDuration } from './duration';
+import { formatDurationLabel, sameDuration } from './duration';
 import type { CacheValues } from './settings';
 
 /** The unsaved changes in plain words, one entry per change (also the count in the save bar). */
@@ -8,7 +8,9 @@ export function pendingChanges(draft: CacheValues, effective: CacheValues | null
 	const onOff = (value: boolean) => (value ? 'on' : 'off');
 	if (draft.autoPurge !== effective.autoPurge) list.push(`clear the cache when content changes: ${onOff(draft.autoPurge)}`);
 	if (draft.skipAllowed !== effective.skipAllowed) list.push(`allow apps to skip the cache: ${onOff(draft.skipAllowed)}`);
-	if (!sameDuration(draft.ttl, effective.ttl)) list.push(`keep answers in the cache for: ${durationText(draft.ttl) || '(empty)'}`);
+	if (!sameDuration(draft.ttl, effective.ttl)) {
+		list.push(`keep answers in the cache for: ${draft.ttl ? formatDurationLabel(draft.ttl) : '(empty)'}`);
+	}
 	const now = new Set(effective.ignoreList);
 	const next = new Set(draft.ignoreList);
 	const added = draft.ignoreList.filter((name) => !now.has(name));

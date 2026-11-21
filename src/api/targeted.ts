@@ -528,7 +528,9 @@ function toBool(value: unknown): boolean {
 	return value === true || (typeof value === 'string' && ['true', '1', 'yes', 'on'].includes(value.trim().toLowerCase()));
 }
 
-export const RESTART_PROBLEM = 'Granular Cache starts with Directus. Restart Directus once after installing or updating the extension';
+/** Shown on the pages (joined with other problems, so no final period). */
+export const RESTART_PROBLEM =
+	"Restart Directus once to activate Granular Cache. Until then, a change clears the whole cache, not just its collection. Lifetimes per collection don't apply yet. Rules that keep the cache already work";
 
 /** `env`: the settings object of the caller (the endpoint), so the values match the Status page. */
 export function runtimeStatus(env: Record<string, unknown> = runtime().env): RuntimeStatus {

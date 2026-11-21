@@ -45,7 +45,8 @@
 			</sidebar-detail>
 			<sidebar-detail id="ttl" icon="schedule" title="Cache Lifetime">
 				<p class="sidebar-text">
-					Write a duration like 5m (minutes), 1h (hours) or 1d (days). At most 30 days.
+					Write a duration like 5m (minutes), 1h (hours) or 1d (days). At most 30 days. A number with no unit is
+					milliseconds (2 means 2 ms, not 2 hours).
 				</p>
 				<p class="sidebar-text">
 					Shorter means fresher data, but Directus asks the database more often. Longer means less work for the
@@ -112,9 +113,9 @@
 						description="How long answers stay in the cache."
 						hint="Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared."
 						env="CACHE_TTL"
-						:effective="state.effective.ttl"
-						:configured="state.baseline.ttl"
-						:override="state.stored?.ttl ?? null"
+						:effective="formatDurationShort(state.effective.ttl)"
+						:configured="formatDurationShort(state.baseline.ttl)"
+						:override="state.stored?.ttl == null ? null : formatDurationShort(state.stored.ttl)"
 					>
 						<template #control>
 							<v-input
@@ -125,8 +126,9 @@
 								@update:model-value="draft.ttl = $event ?? ''"
 							/>
 						</template>
-						<template v-if="!ttlValid" #edit>
-							<span class="field-error">{{ TTL_ERROR }}</span>
+						<template v-if="!ttlValid || bareMillisecondsHint(draft.ttl)" #edit>
+							<span v-if="!ttlValid" class="field-error">{{ TTL_ERROR }}</span>
+							<span v-else class="field-hint">{{ bareMillisecondsHint(draft.ttl) }}</span>
 						</template>
 					</setting-card>
 					<setting-card
@@ -168,7 +170,7 @@ import { onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import SaveActions from './save-actions.vue';
 import SettingCard from './setting-card.vue';
-import { TTL_ERROR } from '../shared/duration';
+import { TTL_ERROR, bareMillisecondsHint, formatDurationShort } from '../shared/duration';
 import { useCacheManager } from './composables/use-cache-manager';
 import { usePageClass } from './composables/use-page-class';
 
@@ -250,6 +252,11 @@ onMounted(() => loadState(true));
 .field-error {
 	font-size: 12px;
 	color: var(--theme--danger, var(--danger));
+}
+.field-hint {
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .invalid {
 	--theme--form--field--input--border-color: var(--theme--danger, var(--danger));

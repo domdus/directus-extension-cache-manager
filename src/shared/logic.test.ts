@@ -258,6 +258,35 @@ test('parseDuration follows the ms rules Directus uses for CACHE_TTL', async () 
 	assert.equal(sameDuration('1h', '2h'), false);
 });
 
+test('duration labels always include a unit; a bare number is milliseconds', async () => {
+	const { formatDurationLabel, formatDurationShort, isBareMilliseconds, bareMillisecondsHint } = await import('./duration');
+	assert.equal(formatDurationLabel('2h'), '2 hours');
+	assert.equal(formatDurationLabel('1h'), '1 hour');
+	assert.equal(formatDurationLabel('5m'), '5 minutes');
+	assert.equal(formatDurationLabel('2'), '2 milliseconds');
+	assert.equal(formatDurationLabel('300000'), '5 minutes');
+	assert.equal(formatDurationLabel('12 hours'), '12 hours');
+	assert.equal(formatDurationShort('2h'), '2h');
+	assert.equal(formatDurationShort('2'), '2ms');
+	assert.equal(formatDurationShort('300000'), '5m');
+	assert.equal(isBareMilliseconds('2'), true);
+	assert.equal(isBareMilliseconds('2h'), false);
+	assert.equal(isBareMilliseconds(300000), true);
+	assert.match(bareMillisecondsHint('2') ?? '', /2 milliseconds.*2h for hours/);
+	assert.equal(bareMillisecondsHint('2h'), null);
+});
+
+test('describeRule names the lifetime with a unit', async () => {
+	const { describeRule, DEFAULT_RULE } = await import('./rules');
+	assert.equal(describeRule({ ...DEFAULT_RULE, ttl: '2' }), 'answers stay 2 milliseconds');
+	assert.equal(describeRule({ ...DEFAULT_RULE, ttl: '2h' }), 'answers stay 2 hours');
+	assert.equal(describeRule({ ...DEFAULT_RULE, ttl: '5m' }), 'answers stay 5 minutes');
+	assert.equal(
+		describeRule({ create: true, update: false, delete: true, skipFields: [], ttl: '1h' }),
+		'Clears on create and delete · answers stay 1 hour',
+	);
+});
+
 test('validateInput checks ttl', () => {
 	const ok = validateInput({ ttl: ' 12h ' }, new Set());
 	assert.deepEqual(ok, { ok: true, value: { autoPurge: null, skipAllowed: null, ignoreList: null, ttl: '12h' } });
@@ -460,7 +489,7 @@ test('sensitive collection names get a warning on suggestions', async () => {
 	for (const name of ['visits', 'com_videos', 'com_views', 'searches', 'errors', 'cartoons', 'authors', 'pages']) {
 		assert.equal(looksSensitive(name), false, name);
 	}
-	assert.match(suggestionTooltip('subscriptions', '12h'), /Cache-Control: no-store.*up to 12h old/);
+	assert.match(suggestionTooltip('subscriptions', '12h'), /Cache-Control: no-store.*up to 12 hours old/);
 	assert.match(suggestionTooltip('visits', ''), /until the cache expires/);
 });
 

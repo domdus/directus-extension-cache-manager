@@ -45,9 +45,10 @@
 					counter. A change to any other field still clears.
 				</p>
 				<p class="sidebar-text">
-					<strong>Lifetime</strong>: how long answers that use this collection stay in the cache. An answer that
-					uses several collections gets the shortest of their times; collections without their own time count with the
-					global one ({{ data?.globalTtl ?? 'CACHE_TTL' }}).
+					<strong>Lifetime</strong>: how long answers that use this collection stay in the cache. Write 5m, 1h or 1d —
+					a number with no unit is milliseconds. An answer that uses several collections gets the shortest of their
+					times; collections without their own time count with the global one
+					({{ data?.globalTtl ? formatDurationLabel(data.globalTtl) : 'CACHE_TTL' }}).
 				</p>
 				<p class="sidebar-text">
 					Apps that need data up to date right away can always ask for it with <code>Cache-Control: no-store</code>.
@@ -63,7 +64,9 @@
 
 			<template v-if="data">
 				<v-notice v-if="data.status.problems.length" type="warning" class="notice">
-					{{ data.status.problems.join('. ') }}. Directus clears the whole cache as usual.
+					{{ data.status.problems.join('. ') }}.
+					<!-- The restart text says itself what still works; other problems mean Granular can't run at all. -->
+					<template v-if="data.status.problems.length > (data.status.installed ? 0 : 1)">Directus clears the whole cache as usual.</template>
 				</v-notice>
 				<v-notice v-else-if="!data.status.autoPurge" type="info" class="notice">
 					Auto Purge is off on the <router-link to="/cache-manager">Status</router-link> page, so changes don't clear
@@ -153,7 +156,7 @@
 
 				<div class="toolbar">
 					<v-notice type="info" class="toolbar-notice">
-						Collections without a rule clear on every change and use the global TTL ({{ data.globalTtl }}).
+						Collections without a rule clear on every change and use the global lifetime ({{ formatDurationLabel(data.globalTtl) }}).
 					</v-notice>
 					<div class="add-rule">
 						<v-select :model-value="null" :items="addChoices" :disabled="!addChoices.length" placeholder="Add a rule for…" @update:model-value="onAdd" />
@@ -171,12 +174,12 @@
 					<table>
 						<thead>
 							<tr>
-								<th>Collection</th>
+								<th class="name-col">Collection</th>
 								<th class="center">Create</th>
 								<th class="center">Update</th>
 								<th class="center">Delete</th>
-								<th v-tooltip="'Changes that only touch these fields keep the cache'">Skip Fields</th>
-								<th v-tooltip="'How long answers that use this collection stay cached'">Lifetime</th>
+								<th class="fields-col" v-tooltip="'Changes that only touch these fields keep the cache'">Skip Fields</th>
+								<th class="ttl-col" v-tooltip="'How long answers that use this collection stay cached. Write 5m, 1h or 1d — a number with no unit is milliseconds.'">Lifetime</th>
 								<th class="action-col" />
 							</tr>
 						</thead>
@@ -185,7 +188,7 @@
 								<td colspan="7" class="subdued">No rule matches "{{ filter }}".</td>
 							</tr>
 							<tr v-for="name in shownNames" :key="name">
-								<td>
+								<td class="name-col">
 									<span class="name">{{ name }}</span>
 									<span class="row-hint">{{ describeRule(draft.collections[name]!) }}</span>
 								</td>
@@ -214,11 +217,14 @@
 								<td class="ttl-col">
 									<v-input
 										:model-value="draft.collections[name]!.ttl ?? ''"
-										:placeholder="`${data.globalTtl} (global)`"
+										:placeholder="`${formatDurationShort(data.globalTtl)} (global)`"
 										:class="{ invalid: invalidTtl.includes(name) }"
 										@update:model-value="(value) => updateRule(name, { ttl: value || null })"
 									/>
 									<span v-if="invalidTtl.includes(name)" class="field-error">{{ TTL_ERROR }}</span>
+									<span v-else-if="bareMillisecondsHint(draft.collections[name]!.ttl)" class="field-hint">
+										{{ bareMillisecondsHint(draft.collections[name]!.ttl) }}
+									</span>
 								</td>
 								<td class="action-col">
 									<v-button v-tooltip="'Remove rule'" icon x-small secondary @click="removeRule(name)">
@@ -243,7 +249,7 @@ import ModuleNavigation from './navigation.vue';
 import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 import { describeRule } from '../shared/rules';
-import { TTL_ERROR } from '../shared/duration';
+import { TTL_ERROR, bareMillisecondsHint, formatDurationLabel, formatDurationShort } from '../shared/duration';
 import { formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
@@ -478,6 +484,7 @@ p.explain {
 }
 table {
 	width: 100%;
+	table-layout: fixed;
 	border-collapse: collapse;
 	font-size: 13px;
 }
@@ -486,6 +493,7 @@ td {
 	padding: 8px 10px;
 	text-align: left;
 	vertical-align: middle;
+	overflow: hidden;
 	border-bottom: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 }
 tbody tr:last-child td {
@@ -498,10 +506,14 @@ th {
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 	background: var(--theme--background-subdued, var(--background-subdued));
 }
+.name-col {
+	width: 22%;
+	min-width: 0;
+}
 th.center,
 td.center {
+	width: 4.5rem;
 	text-align: center;
-	width: 70px;
 }
 td.center :deep(.v-checkbox) {
 	display: inline-flex;
@@ -509,28 +521,41 @@ td.center :deep(.v-checkbox) {
 }
 .name {
 	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 }
 .row-hint {
 	display: block;
 	margin-top: 2px;
 	font-size: 12px;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .fields-col {
-	min-width: 220px;
+	width: auto;
+	min-width: 0;
 }
 .ttl-col {
-	width: 170px;
+	width: 10.5rem;
 }
 .action-col {
-	width: 44px;
+	width: 2.75rem;
 	text-align: right;
 }
 .field-error {
 	display: block;
 	font-size: 12px;
 	color: var(--theme--danger, var(--danger));
+}
+.field-hint {
+	display: block;
+	margin-top: 4px;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 .invalid {
 	--theme--form--field--input--border-color: var(--theme--danger, var(--danger));

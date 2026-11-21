@@ -1,4 +1,4 @@
-import { durationText, isValidTtl, parseDuration, TTL_ERROR } from './duration';
+import { durationText, formatDurationLabel, isValidTtl, parseDuration, TTL_ERROR } from './duration';
 
 /** Kind of write that asks Directus to clear the cache. `upsert` creates or updates. */
 export type WriteAction = 'create' | 'update' | 'delete' | 'upsert';
@@ -192,14 +192,14 @@ function normalize(config: RulesConfig) {
 	};
 }
 
-/** Short text for a rule, e.g. "Clears on create and delete · keeps the cache when only views_count changes · keeps answers 5m". */
+/** Short text for a rule, e.g. "Clears on create and delete · keeps the cache when only views_count changes · answers stay 5 minutes". */
 export function describeRule(rule: CollectionRule): string {
 	const on = (['create', 'update', 'delete'] as const).filter((action) => rule[action]);
 	const parts: string[] = [];
 	if (!on.length) parts.push('Never clears');
 	else if (on.length < 3) parts.push(`Clears on ${on.join(' and ')}`);
 	if (rule.update && rule.skipFields.length) parts.push(`keeps the cache when only ${rule.skipFields.join(', ')} ${rule.skipFields.length === 1 ? 'changes' : 'change'}`);
-	if (rule.ttl) parts.push(`keeps answers ${rule.ttl}`);
+	if (rule.ttl) parts.push(`answers stay ${formatDurationLabel(rule.ttl)}`);
 	return parts.join(' · ') || 'Default';
 }
 

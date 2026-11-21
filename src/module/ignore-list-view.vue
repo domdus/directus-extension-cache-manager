@@ -297,6 +297,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { buildRows, retentionWarning, unmeasuredLine, type TableRow } from '../shared/coverage';
 import { ROW_STATE_LABELS, looksSensitive, rowState, selectionChanges, suggestionTooltip, type RowState } from '../shared/selection';
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
+import { formatDurationLabel } from '../shared/duration';
 import { useRules } from './composables/use-rules';
 import {
 	formatTimes,
@@ -411,7 +412,9 @@ const suggestionRateTooltip = computed(() => {
 	if (!current) return '';
 	if (granular.value) return 'Ignore suggestions assume that every change clears the whole cache.';
 	if (!current.recommendedList.length) return 'No collection changes often enough to matter.';
-	const ttl = state.value?.effective.ttl || 'the cache lifetime';
+	const ttl = state.value?.effective.ttl
+		? formatDurationLabel(state.value.effective.ttl)
+		: 'the cache lifetime';
 	return `Would have been cleared ${formatTimes(current.recommendedPurgeMinutes, current.windowMinutes)}. Ignored collections can be up to ${ttl} old.`;
 });
 const otherCollections = computed(() => {
@@ -697,6 +700,7 @@ th {
 	background: var(--theme--primary, var(--primary));
 	color: var(--theme--foreground-inverted, var(--foreground-inverted, #fff));
 	font-size: 12px;
+	cursor: pointer;
 }
 .badge--link {
 	text-decoration: none;
