@@ -2,7 +2,7 @@
 
 Stop Directus from throwing away its whole cache on every change. Cache Manager shows what clears the cache and can make a change clear **only the cached responses that use the changed collection**. Everything is set in the Data Studio. No config files.
 
-<img alt="Cache Manager — Granular Cache" src="docs/granular-cache.png" width="800" />
+<img alt="Cache Manager — Granular Cache" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/granular-cache.png" width="800" />
 
 Open **Cache Manager** from the module bar (admins only):
 
@@ -130,8 +130,8 @@ What you save applies right away and stays after a restart. **Reset to Configure
 Tested on Directus 11.17 with Postgres and the cache in memory, on a website-like setup: 2,000 pages, each with a category, an author and 3 tags. 24 readers request category lists and page details (62 different requests) for 30 seconds, while visits are recorded all the time (5 to 10 per second). Two runs each, averaged.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmark-dark.png" />
-  <img alt="Directus alone vs. with Cache Manager: twice the reads per second, half the read time, 97 % fewer database queries" src="docs/benchmark-light.png" width="800" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-dark.png" />
+  <img alt="Directus alone vs. with Cache Manager: twice the reads per second, half the read time, 97 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-light.png" width="800" />
 </picture>
 
 **Visits counted on the page** (a `views_count` field), with Granular mode and one rule: Skip Fields `views_count` on pages, so counting a visit keeps the cache:
