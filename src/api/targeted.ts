@@ -131,7 +131,8 @@ const KEY = Symbol.for('directus-extension-cache-manager.targeted');
  * but never cause one: otherwise every write, even one a rule keeps, would clear.
  */
 const BOOKKEEPING = new Set(['directus_activity', 'directus_revisions']);
-const MAX_RECENT = 50;
+/** Kept events; Statistics groups identical ones in the same second and shows up to 50 rows. */
+const MAX_RECENT = 200;
 const HISTORY_HOURS = 24;
 const HOUR = 3_600_000;
 const DELETE_CHUNK = 500;

@@ -89,7 +89,7 @@
 			<template v-else>
 			<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 				<template #icon><v-icon name="list_alt" /></template>
-				Overview
+				Clear Rate
 			</v-divider>
 			<p class="explain intro">
 				How often changes cleared the whole cache in the chosen period, and what rules that never clear would change.

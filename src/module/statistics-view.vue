@@ -50,7 +50,7 @@
 				</v-notice>
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="history" /></template>
-					Overview
+					Cache Clears
 				</v-divider>
 				<p class="explain intro">What changes did since Directus started ({{ new Date(data.status.since).toLocaleString() }}).</p>
 				<v-notice v-if="sizeVsClears" type="warning" class="notice">
@@ -189,9 +189,9 @@
 					<template #icon><v-icon name="list" /></template>
 					Recent Events
 				</v-divider>
-				<p class="explain intro">The last 50 changes that asked Directus to clear the cache, newest first.</p>
+				<p class="explain intro">The latest changes that asked Directus to clear the cache, newest first. Identical ones in the same second are shown once, with a count.</p>
 
-				<div v-if="data.status.recent.length" class="table-wrap">
+				<div v-if="events.length" class="table-wrap">
 					<table>
 						<thead>
 							<tr>
@@ -201,9 +201,12 @@
 							</tr>
 						</thead>
 						<tbody>
-							<tr v-for="(event, i) in data.status.recent" :key="i">
+							<tr v-for="(event, i) in events" :key="i">
 								<td class="time">{{ new Date(event.at).toLocaleTimeString() }}</td>
-								<td>{{ event.reason }}</td>
+								<td>
+									{{ event.reason }}
+									<span v-if="event.count > 1" v-tooltip="`${event.count} times in the same second`" class="count">×{{ event.count }}</span>
+								</td>
 								<td>
 									<span class="result" :class="`result--${event.kind}`">{{ resultText(event) }}</span>
 								</td>
@@ -222,9 +225,10 @@
 import { computed, onMounted, onUnmounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import HourBars, { type BarColumn } from './hour-bars.vue';
-import { useRules, type RulesStatus } from './composables/use-rules';
+import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 import { emptiedEveryLabel, sizeVsClearsText } from '../shared/health';
+import { groupEvents, type GroupedEvent } from '../shared/events';
 import { formatBytes, formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
@@ -319,7 +323,9 @@ function times(count: number): string {
 	return `${formatNumber(count)} ${count === 1 ? 'time' : 'times'}`;
 }
 
-function resultText(event: RulesStatus['recent'][number]): string {
+const events = computed(() => groupEvents(data.value?.status.recent ?? []));
+
+function resultText(event: GroupedEvent): string {
 	if (event.kind === 'full') return 'Whole cache cleared';
 	if (event.kind === 'skipped') return 'Kept (rule)';
 	return `${formatNumber(event.removed)} ${event.removed === 1 ? 'cached response' : 'cached responses'} cleared`;
@@ -518,5 +524,14 @@ th {
 .largest-value {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
+}
+.count {
+	margin-left: 6px;
+	padding: 0 6px;
+	border-radius: 10px;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	background: var(--theme--background-subdued, var(--background-subdued));
 }
 </style>

@@ -549,3 +549,24 @@ test('rules that never clear replace the saved ignore list', async () => {
 	assert.equal(neverClears({ create: false, update: true, delete: false, skipFields: [], ttl: null }), false);
 	assert.deepEqual(neverClearCollections(config), ['logs', 'views']);
 });
+
+test('recent events: identical clears in the same second become one row with a count', async () => {
+	const { groupEvents } = await import('./events');
+	const e = (at: string, reason: string, kind: 'full' | 'targeted' | 'skipped' = 'full', removed = 0) => ({ at, kind, reason, removed, collection: null, action: null });
+	const rows = groupEvents([
+		e('2026-11-21T15:00:05.900Z', 'Created in disk_free'),
+		e('2026-11-21T15:00:05.100Z', 'Created in disk_free'),
+		e('2026-11-21T15:00:05.000Z', 'Created in disk_free'),
+		e('2026-11-21T14:45:33.000Z', 'Saved in deliveries_item'),
+		e('2026-11-21T14:45:33.000Z', 'Changed in pages', 'targeted', 3),
+		e('2026-11-21T14:45:33.000Z', 'Changed in pages', 'targeted', 2),
+		e('2026-11-21T14:00:06.000Z', 'Created in disk_free'),
+	]);
+	assert.deepEqual(rows.map((row) => [row.reason, row.count, row.removed]), [
+		['Created in disk_free', 3, 0],
+		['Saved in deliveries_item', 1, 0],
+		['Changed in pages', 2, 5],
+		['Created in disk_free', 1, 0],
+	]);
+	assert.equal(groupEvents(rows, 2).length, 2);
+});

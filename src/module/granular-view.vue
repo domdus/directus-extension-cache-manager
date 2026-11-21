@@ -462,8 +462,10 @@ code {
 	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
 	font-size: 0.9em;
 }
-.after-choice {
+/* More specific than Directus' own paragraph styles, so the gap below the mode choice always applies. */
+p.explain.after-choice {
 	margin: 24px 0 0;
+	padding-top: 0;
 }
 .after-choice a {
 	color: var(--theme--primary, var(--primary));

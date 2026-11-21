@@ -127,15 +127,27 @@ What you save applies right away and stays after a restart. **Reset to Configure
 
 ## Performance
 
-Measured on Directus 11.17 with Postgres and the cache in memory: 24 parallel readers on 60 different lists, while another collection was changed 5 times per second (3–4 runs each, averaged):
+Tested on Directus 11.17 with Postgres and the cache in memory, on a website-like setup: 2,000 pages, each with a category, an author and 3 tags. 24 readers request category lists and page details (62 different requests) for 30 seconds, while visits are recorded about 5 times per second. Two runs each, averaged.
 
-| | Without Cache Manager | Whole Cache | Granular |
-|---|---|---|---|
-| Reads answered from the cache | 16 % | 13 % | **100 %** |
-| Reads per second | 318 | 296 | **406** (+28 %) |
-| Median read time | 75 ms | 80 ms | **57 ms** (−24 %) |
+**Visits counted on the page** (a `views_count` field), with Granular mode and one rule: Skip Fields `views_count` on pages, so counting a visit keeps the cache:
 
-Cache Manager's own work is within the run-to-run noise: cached reads and saves are as fast as without it, and a read that is not cached takes about 3 ms longer in Granular mode. The gain grows with slower queries and a database on another server; this test used small tables on the same machine.
+| | Directus alone | With Cache Manager |
+|---|---|---|
+| Reads answered from the cache | 1 % | **100 %** |
+| Reads per second | 148 | **314** (2.1×) |
+| Median read time | 156 ms | **72 ms** |
+
+Granular mode without that rule doesn't help here (4 % from the cache), because every visit changes the pages themselves.
+
+**Visits saved in their own collection**, with Granular mode and no rules at all:
+
+| | Directus alone | With Cache Manager |
+|---|---|---|
+| Reads answered from the cache | under 1 % | **100 %** |
+| Reads per second | 150 | **349** (2.3×) |
+| Median read time | 152 ms | **68 ms** |
+
+Cache Manager's own work is within the run-to-run noise: reads from the cache and saves are as fast as without it, and a read that is not cached takes about 3 ms longer in Granular mode. The gain grows with slower queries and a database on another server; these tests ran on one machine.
 
 ## Uninstall
 
