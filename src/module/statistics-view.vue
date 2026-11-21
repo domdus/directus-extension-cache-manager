@@ -29,6 +29,11 @@
 					The numbers live in memory. They start at zero when Directus restarts and are counted per process.
 				</p>
 				<p class="sidebar-text">
+					Directus does not report cache hits and misses. What this page can show is how often the cache is emptied, how
+					much stays in memory, and what share of changes left other answers in place (Granular Cache and never-clear
+					rules).
+				</p>
+				<p class="sidebar-text">
 					The <router-link to="/cache-manager/analysis">Analysis</router-link> page looks back further: it counts changes in
 					the activity log.
 				</p>
@@ -42,6 +47,12 @@
 			<template v-if="data">
 				<v-notice v-if="shownProblems.length" type="warning" class="notice">
 					{{ shownProblems.join('. ') }}.
+				</v-notice>
+				<v-notice v-if="sizeVsClears" type="warning" class="notice">
+					<span>
+						{{ sizeVsClears }}
+						<router-link to="/cache-manager/analysis">Open Analysis</router-link>
+					</span>
 				</v-notice>
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="history" /></template>
@@ -86,6 +97,18 @@
 							/>
 						</span>
 					</div>
+					<div v-if="emptiedEvery" class="stat">
+						<span class="stat-value">{{ emptiedEvery }}</span>
+						<span class="stat-label">
+							Emptied
+							<v-icon
+								v-tooltip.top="'Average time between whole-cache clears since Directus started. If it is shorter than the Cache Lifetime, answers almost never live as long as the lifetime allows.'"
+								name="help_outline"
+								small
+								class="stat-info"
+							/>
+						</span>
+					</div>
 				</section>
 				<p v-if="data.status.targetedActive" class="meta">
 					{{ formatNumber(data.status.indexed) }} answers in the cache right now.
@@ -104,7 +127,19 @@
 							<span class="stat-label">
 								Size
 								<v-icon
-									v-tooltip.top="`${formatNumber(data.status.size.entries)} ${data.status.size.entries === 1 ? 'entry' : 'entries'}. About the size of the stored data; Node.js needs some more memory around it.`"
+									v-tooltip.top="`${formatNumber(data.status.size.entries)} ${data.status.size.entries === 1 ? 'entry' : 'entries'}. About the size of the stored data; Node.js needs some more memory around it. A few megabytes after many whole-cache clears usually means the cache is rebuilt constantly.`"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+						<div v-if="peakBytes !== null" class="stat">
+							<span class="stat-value">{{ formatBytes(peakBytes) }}</span>
+							<span class="stat-label">
+								Peak Size
+								<v-icon
+									v-tooltip.top="'Largest size measured in the last 24 hours (since Directus started, if that is shorter). If it stays close to the current size while the cache is emptied often, the cache never gets the chance to grow.'"
 									name="help_outline"
 									small
 									class="stat-info"
@@ -201,6 +236,7 @@ import ModuleNavigation from './navigation.vue';
 import HourBars, { type BarColumn } from './hour-bars.vue';
 import { useRules, type RulesStatus } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
+import { emptiedEveryLabel, sizeVsClearsText } from '../shared/health';
 import { formatBytes, formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
@@ -212,6 +248,21 @@ const shownProblems = computed(() => {
 	return !status.installed && !data.value!.config.targeted ? status.problems.slice(1) : status.problems;
 });
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
+
+const sizeVsClears = computed(() => {
+	const status = data.value?.status;
+	if (!status?.size) return null;
+	return sizeVsClearsText(status.size.bytes, status.counts.full, status.since);
+});
+const emptiedEvery = computed(() => {
+	const status = data.value?.status;
+	if (!status) return null;
+	return emptiedEveryLabel(status.counts.full, status.since);
+});
+const peakBytes = computed(() => {
+	const values = (data.value?.status.history ?? []).map((h) => h.bytes).filter((bytes): bytes is number => bytes != null);
+	return values.length ? Math.max(...values) : null;
+});
 
 const topCollections = computed(() =>
 	Object.entries(data.value?.status.indexedByCollection ?? {})
@@ -312,6 +363,11 @@ onUnmounted(() => {
 }
 .notice {
 	margin-bottom: 16px;
+}
+.notice a {
+	margin-left: 0.35em;
+	color: inherit;
+	text-decoration: underline;
 }
 .loading {
 	display: flex;

@@ -41,30 +41,35 @@
 			<span v-if="!effective.length" class="empty">None</span>
 		</div>
 
-		<div class="card-foot">
-			<div class="tags">
-				<template v-if="readonly">
-					<span class="tag tag-muted">From configuration</span>
-				</template>
-				<template v-else>
-					<span class="tag">
-						<span class="tag-label">In use</span>
-						<span class="tag-value">{{ summary(effective) }}</span>
-					</span>
-					<span class="tag">
-						<span class="tag-label">Configured</span>
-						<span class="tag-value">{{ summary(configured) }}</span>
-					</span>
-					<span v-if="override !== null && override !== undefined" class="tag">
-						<span class="tag-label">Saved here</span>
-						<span class="tag-value">{{ summary(override) }}</span>
-					</span>
-					<span v-if="addedCount" class="tag tag-accent">
-						{{ addedCount === 1 ? '1 added here' : `${addedCount} added here` }}
-					</span>
-				</template>
+		<div class="card-bottom">
+			<div class="card-foot">
+				<div class="tags">
+					<template v-if="readonly">
+						<span class="tag tag-muted">From configuration</span>
+					</template>
+					<template v-else>
+						<span class="tag">
+							<span class="tag-label">In use</span>
+							<span class="tag-value">{{ summary(effective) }}</span>
+						</span>
+						<span class="tag">
+							<span class="tag-label">Configured</span>
+							<span class="tag-value">{{ summary(configured) }}</span>
+						</span>
+						<span v-if="override !== null && override !== undefined" class="tag">
+							<span class="tag-label">Saved here</span>
+							<span class="tag-value">{{ summary(override) }}</span>
+						</span>
+						<span v-if="addedCount" class="tag tag-accent">
+							{{ addedCount === 1 ? '1 added here' : `${addedCount} added here` }}
+						</span>
+					</template>
+				</div>
+				<span class="env-name">{{ env }}</span>
 			</div>
-			<span class="env-name">{{ env }}</span>
+			<div class="card-link">
+				<slot name="link" />
+			</div>
 		</div>
 	</article>
 </template>
@@ -199,13 +204,15 @@ function summary(value: Value | null | undefined): string {
 	font-size: 13px;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
+.card-bottom {
+	margin-top: auto;
+}
 .card-foot {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
 	flex-wrap: wrap;
-	margin-top: auto;
 	padding-block-start: 12px;
 	border-block-start: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 }
@@ -255,5 +262,16 @@ function summary(value: Value | null | undefined): string {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
+}
+.card-link {
+	display: flex;
+	justify-content: flex-end;
+	min-height: 28px;
+	margin-top: 10px;
+}
+.card-link:empty {
+	display: none;
+	min-height: 0;
+	margin-top: 0;
 }
 </style>

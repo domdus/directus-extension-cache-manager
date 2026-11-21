@@ -94,12 +94,20 @@
 			<p class="explain intro">
 				How often changes cleared the whole cache in the chosen period, and what rules that never clear would change.
 				Collections whose rule never clears, and those on the ignore list in the Directus configuration, keep the cache.
+				Cached answers expire {{ ttlText }} if nothing clears them sooner.
 			</p>
 
 			<div v-if="!analysis && loadingAnalysis" class="loading"><v-progress-circular indeterminate /></div>
 
 			<template v-if="analysis">
 				<v-notice v-if="retentionNotice" type="warning" class="notice">{{ retentionNotice }}</v-notice>
+				<v-notice v-if="ttlVsPurge" :type="granular ? 'info' : 'warning'" class="notice">{{ ttlVsPurge }}</v-notice>
+				<v-notice v-if="skipCacheNotice" type="info" class="notice">
+					<span>
+						{{ skipCacheNotice }}
+						<router-link to="/cache-manager">Open Status</router-link>
+					</span>
+				</v-notice>
 				<v-notice v-if="granular" type="info" class="notice">
 					<span>
 						Granular mode is on: a change only clears the answers that use its collection. The numbers below show how
@@ -303,6 +311,7 @@ import { buildRows, retentionWarning, unmeasuredLine, type TableRow } from '../s
 import { ROW_STATE_LABELS, looksSensitive, rowState, selectionChanges, suggestionTooltip, type RowState } from '../shared/selection';
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
 import { formatDurationLabel } from '../shared/duration';
+import { ttlVsPurgeText } from '../shared/health';
 import { neverClearCollections } from '../shared/rules';
 import { useRules } from './composables/use-rules';
 import {
@@ -498,6 +507,18 @@ const granular = computed(() => !!rulesData.value?.status.targetedActive);
 const autoPurgeOff = computed(() => !!state.value && !state.value.effective.autoPurge);
 const showAnyway = ref(false);
 const ttlText = computed(() => (state.value?.effective.ttl ? `after ${formatDurationLabel(state.value.effective.ttl)}` : 'after the cache lifetime'));
+const ttlVsPurge = computed(() => {
+	if (!analysis.value || autoPurgeOff.value) return null;
+	return ttlVsPurgeText(state.value?.effective.ttl, analysis.value.purgeMinutes, analysis.value.windowMinutes, {
+		granular: granular.value,
+	});
+});
+const skipCacheNotice = computed(() => {
+	if (!state.value || state.value.effective.skipAllowed) return null;
+	const neverClear = rulesData.value ? neverClearCollections(rulesData.value.config) : [];
+	if (!(analysis.value?.recommendedList.length) && !neverClear.length) return null;
+	return 'A collection that never clears can serve stale data until the cache lifetime. Apps that need a fresh answer must send Cache-Control: no-store. Skip Cache is off.';
+});
 
 onMounted(async () => {
 	loadRules();

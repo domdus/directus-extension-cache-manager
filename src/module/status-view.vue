@@ -73,6 +73,12 @@
 				<v-notice v-if="!state.inSync" type="warning" class="notice">
 					The settings in use differ from what is configured and saved here. Save again or restart Directus.
 				</v-notice>
+				<v-notice v-if="ttlVsPurge" type="warning" class="notice">
+					<span>
+						{{ ttlVsPurge }}
+						<router-link to="/cache-manager/analysis">Open Analysis</router-link>
+					</span>
+				</v-notice>
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="tune" /></template>
@@ -95,10 +101,14 @@
 						<template #control>
 							<v-checkbox v-model="draft.autoPurge" aria-label="Enable Auto Purge" />
 						</template>
+						<template #link>
+							<v-button small secondary to="/cache-manager/cache">Open Granular Cache</v-button>
+						</template>
 					</setting-card>
 					<setting-card
 						title="Skip Cache"
-						description="Let apps request fresh data with no-store."
+						description="Let apps request a fresh answer for one request."
+						:hint="SKIP_CACHE_HINT"
 						env="CACHE_SKIP_ALLOWED"
 						:effective="onOff(state.effective.skipAllowed)"
 						:configured="onOff(state.baseline.skipAllowed)"
@@ -110,8 +120,8 @@
 					</setting-card>
 					<setting-card
 						title="Cache Lifetime"
-						description="How long answers stay in the cache."
-						hint="Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared."
+						description="How long answers stay if nothing clears them first."
+						hint="Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared. Auto Purge often empties the cache sooner. Analysis shows how often."
 						env="CACHE_TTL"
 						:effective="formatDurationShort(state.effective.ttl)"
 						:configured="formatDurationShort(state.baseline.ttl)"
@@ -130,14 +140,22 @@
 							<span v-if="!ttlValid" class="field-error">{{ TTL_ERROR }}</span>
 							<span v-else class="field-hint">{{ bareMillisecondsHint(draft.ttl) }}</span>
 						</template>
+						<template #link>
+							<v-button small secondary to="/cache-manager/analysis">Open Analysis</v-button>
+						</template>
 					</setting-card>
 					<setting-card
 						title="Cache Store"
-						description="Where the cache is kept."
+						description="Where the cache is kept. Statistics shows how much it holds and how often it is emptied."
+						hint="A small size after many whole-cache clears usually means the cache is rebuilt constantly, not that the site is small."
 						env="CACHE_STORE"
 						:effective="String(state.env.CACHE_STORE ?? '–')"
 						readonly
-					/>
+					>
+						<template #link>
+							<v-button small secondary to="/cache-manager/statistics">Open Statistics</v-button>
+						</template>
+					</setting-card>
 					<div class="wide">
 						<setting-card
 							title="Ignored Collections"
@@ -146,7 +164,9 @@
 							:effective="state.effective.ignoreList"
 							readonly
 						>
-							<v-button small secondary to="/cache-manager/analysis">Open Analysis</v-button>
+							<template #link>
+								<v-button small secondary to="/cache-manager/analysis">Open Analysis</v-button>
+							</template>
 						</setting-card>
 					</div>
 				</div>
@@ -165,23 +185,48 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import SaveActions from './save-actions.vue';
 import SettingCard from './setting-card.vue';
 import { TTL_ERROR, bareMillisecondsHint, formatDurationShort } from '../shared/duration';
+import { ttlVsClearsText } from '../shared/health';
 import { useCacheManager } from './composables/use-cache-manager';
+import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 
 const pageClass = usePageClass();
 const { state, draft, busy, ttlValid, loadingState, error, message, loadState, reset } = useCacheManager();
+const { data: rulesData, load: loadRules } = useRules();
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
+
+/**
+ * Lifetime check from what this process counted since it started (no database query on the home page). Not in
+ * Granular mode: there a change keeps the answers it does not touch.
+ */
+const ttlVsPurge = computed(() => {
+	const status = rulesData.value?.status;
+	if (!status || status.targetedActive || !state.value?.effective.autoPurge) return null;
+	return ttlVsClearsText(state.value.effective.ttl, status.counts.full, status.since);
+});
+
+/** (i) text of Skip Cache; the tooltip shows the line breaks. */
+const SKIP_CACHE_HINT = [
+	'An app asks for a fresh answer by sending the header Cache-Control: no-store. Directus then skips the cache for that request.',
+	'',
+	"Example: fetch('/items/subscriptions', { headers: { 'Cache-Control': 'no-store' } })",
+	'',
+	"Apps need it for collections that don't clear the cache. Turn it on unless this Directus is open to the public.",
+].join('\n');
 
 function onOff(value: boolean) {
 	return value ? 'On' : 'Off';
 }
 
-onMounted(() => loadState(true));
+onMounted(() => {
+	loadState(true);
+	loadRules();
+});
 </script>
 
 <style scoped>
@@ -206,6 +251,11 @@ onMounted(() => loadState(true));
 }
 .notice {
 	margin-bottom: 16px;
+}
+.notice a {
+	margin-left: 0.35em;
+	color: inherit;
+	text-decoration: underline;
 }
 .loading {
 	display: flex;

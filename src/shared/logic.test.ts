@@ -509,6 +509,40 @@ test('export and import carry the clearing rules', async () => {
 	assert.equal(parseImportRules('{"ignoreList":["a"]}'), undefined);
 });
 
+test('ttl vs purge: warn only when the cache is emptied much sooner than the lifetime', async () => {
+	const { ttlVsPurgeText, ttlVsClearsText, sizeVsClearsText, emptiedEveryLabel, intervalText } = await import('./health');
+	const day = 24 * 60;
+	assert.match(ttlVsPurgeText('12h', 288, day) ?? '', /12 hours/);
+	assert.match(ttlVsPurgeText('12h', 288, day) ?? '', /12 times per hour/);
+	assert.doesNotMatch(ttlVsPurgeText('12h', 288, day) ?? '', /—/);
+	assert.equal(ttlVsPurgeText('12h', 1, day), null);
+	assert.equal(ttlVsPurgeText('12h', 0, day), null);
+	assert.match(ttlVsPurgeText('12h', 288, day, { granular: true }) ?? '', /Granular mode/);
+	assert.match(ttlVsPurgeText('5m', 30, 60) ?? '', /5 minutes/);
+	assert.equal(ttlVsPurgeText('5m', 1, 60), null);
+
+	const now = Date.UTC(2026, 10, 21, 13, 0, 0);
+	const since = new Date(now - 16 * 3_600_000).toISOString();
+	// 7,932 clears in 16 hours: about every 7 seconds.
+	assert.equal(emptiedEveryLabel(7932, since, now), 'about every 7 seconds');
+	assert.equal(emptiedEveryLabel(2, new Date(now - 4 * 3_600_000).toISOString(), now), 'about every 2 hours');
+	assert.equal(emptiedEveryLabel(0, since, now), null);
+	assert.equal(intervalText(1), 'about every 1 minute');
+	assert.equal(intervalText(3 * 24 * 60), 'about every 3 days');
+
+	// Size hint only when clears are frequent (every 5 minutes or more often), and worded as "likely".
+	assert.match(sizeVsClearsText(4.3 * 1024 * 1024, 7932, since, now) ?? '', /likely never gets the chance to grow: 4.3 MB/);
+	assert.equal(sizeVsClearsText(50 * 1024 * 1024, 7932, since, now), null);
+	assert.equal(sizeVsClearsText(4_000_000, 50, since, now), null, '50 clears in 16 hours is not constant');
+	assert.equal(sizeVsClearsText(4_000_000, 10, since, now), null);
+
+	// Status: from the in-memory counts, after at least 30 minutes.
+	assert.match(ttlVsClearsText('12h', 7932, since, now) ?? '', /Lifetime is 12 hours, but since Directus started the whole cache was cleared about every 7 seconds/);
+	assert.equal(ttlVsClearsText('12h', 7932, new Date(now - 10 * 60_000).toISOString(), now), null);
+	assert.equal(ttlVsClearsText('12h', 2, since, now), null);
+	assert.equal(ttlVsClearsText('1h', 4, since, now), null, 'every 4 hours is longer than the lifetime');
+});
+
 test('rules that never clear replace the saved ignore list', async () => {
 	const { neverClears, neverClearCollections, withNeverClear, DEFAULT_RULES } = await import('./rules');
 	const config = withNeverClear(
