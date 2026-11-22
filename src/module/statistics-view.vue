@@ -113,7 +113,7 @@
 				<p v-if="data.status.targetedActive" class="meta">
 					<template v-if="data.status.indexed >= 0">{{ formatNumber(data.status.indexed) }} cached responses right now.</template>
 					<template v-else>Shared by all Directus servers through Redis.</template>
-					<template v-if="topCollections.length">Most used: {{ topCollections.join(', ') }}.</template>
+					<template v-if="topCollections.length">{{ ' ' }}Most used: {{ topCollections.join(', ') }}.</template>
 				</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">

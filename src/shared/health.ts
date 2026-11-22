@@ -49,9 +49,14 @@ export function intervalText(minutes: number): string {
 
 /** How often the whole cache was cleared since this process started: "about every 7 seconds". */
 export function emptiedEveryLabel(fullClears: number, sinceIso: string, now = Date.now()): string | null {
+	// One or two clears (e.g. the one when Granular starts) are no rhythm: "about every minute" would mislead.
+	if (fullClears < MIN_CLEARS_FOR_RHYTHM) return null;
 	const minutes = minutesBetweenClears(fullClears, sinceIso, now);
 	return minutes === null ? null : intervalText(minutes);
 }
+
+/** Fewer whole-cache clears than this show no "Emptied about every …". */
+export const MIN_CLEARS_FOR_RHYTHM = 3;
 
 /** Whole-cache clears this often or more count as "constantly" (for the size hint). */
 export const CONSTANT_CLEAR_MINUTES = 5;

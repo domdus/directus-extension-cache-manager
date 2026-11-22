@@ -152,10 +152,32 @@ function sortPath(sort: string): string[] {
 	return sort.replace(/^-/, '').split('.');
 }
 
+/** Tag of one item, for clearing single-item responses: `pages#5`. `pages#` stands for all of them. */
+export function itemTag(collection: string, key: unknown = ''): string {
+	return `${collection}#${String(key)}`;
+}
+
+/** Is this tag an item tag (`pages#5`, `pages#`)? Then its collection, else null. */
+export function collectionOfItemTag(tag: string): string | null {
+	const at = tag.indexOf('#');
+	return at > 0 ? tag.slice(0, at) : null;
+}
+
+/**
+ * `/items/<collection>/<key>` (or several keys, `1,2`): the items a single-item read returns. null for anything
+ * else (lists, singletons, system routes).
+ */
+export function itemsOfPath(pathname: string): { collection: string; keys: string[] } | null {
+	const parts = pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
+	if (parts.length !== 3 || parts[0] !== 'items') return null;
+	const keys = parts[2]!.split(',').map((key) => key.trim()).filter(Boolean);
+	return keys.length ? { collection: parts[1]!, keys } : null;
+}
+
 /** Collections the answer of `collection` with this (sanitized) query depends on. */
-export function queryDependencies(schema: SchemaLike, collection: string, query: QueryLike | null | undefined): Set<string> {
+export function queryDependencies(schema: SchemaLike, collection: string, query: QueryLike | null | undefined, includeRoot = true): Set<string> {
 	const walker = new Walker(schema);
-	walker.add(collection);
+	if (includeRoot) walker.add(collection);
 	const alias = query?.alias ?? {};
 	const fields = query?.fields?.length ? query.fields : ['*'];
 	for (const field of fields) {

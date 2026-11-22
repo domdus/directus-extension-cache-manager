@@ -1,11 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { ANY, collectionOfPath, filterDependencies, queryDependencies, type SchemaLike } from '../shared/dependencies';
+import { ANY, collectionOfItemTag, collectionOfPath, filterDependencies, itemsOfPath, itemTag, queryDependencies, type SchemaLike } from '../shared/dependencies';
 import { parseDuration } from '../shared/duration';
 import { DEFAULT_RULE, DEFAULT_RULES, isTargetable, neverClears, ruleClears, ruleFor, ttlFor, type RulesConfig, type WriteAction } from '../shared/rules';
 import { TagIndex } from '../shared/tag-index';
 import { ExpiryQueue } from '../shared/expiry-queue';
 import { redisOf, SharedIndex } from './shared-index';
 import { LOG_PREFIX } from '../shared/constants';
+import { graphqlScope, tracksAllReads, type GraphqlScope } from '../shared/graphql';
 import { ENTRY_OVERHEAD, measureStoreChunked, memoryStoreOf, storedSizeOf, storeKeyOf, sweepKeys, type StoreSize, type SweepResult } from './store-size';
 
 /**
@@ -30,14 +31,20 @@ type KeyvLike = {
 	delete: (key: string | string[]) => Promise<unknown>;
 };
 
-type Touch = { collection: string; action: WriteAction; fields: string[] };
+/** `keys`: the items a write changes; [] for new items only; null when unknown (then all of the collection's items). */
+type Touch = { collection: string; action: WriteAction; fields: string[]; keys: string[] | null };
 type WriteContext = Touch & { parent: WriteContext | null; touched: Touch[]; done: boolean };
 /**
  * `start`: the clear counter when the request began (see Runtime.seq).
  * `ttl`: the answer's own lifetime, when it differs from CACHE_TTL. Directus 11.10+ also reads it from
  * res.locals.cacheTTL; older versions only pass CACHE_TTL to set(), so set() applies it itself.
  */
-type RequestContext = { deps: Set<string>; start: number; ttl?: number | null };
+type RequestContext = { deps: Set<string>; start: number; ttl?: number | null; graphql?: GraphqlRequest };
+/**
+ * A GraphQL request: its dependencies are collected from the ItemsService reads it makes (`deps` starts empty).
+ * `settled`: the root fields were checked when the response was stored (see settleGraphql).
+ */
+type GraphqlRequest = { res: any; schema: SchemaLike; admin: boolean; scope: GraphqlScope; settled: boolean };
 
 export type ClearEvent = {
 	at: string;
@@ -125,11 +132,21 @@ type Runtime = {
 	fullClearedAt: number;
 	anyClearedAt: number;
 	clearedAt: Map<string, number>;
+	/**
+	 * Clear counter per item tag (`pages#5`), oldest first, at most MAX_ITEM_MARKS. Older marks are dropped; a request
+	 * that began before the newest dropped mark counts as stale (it can't tell any more).
+	 */
+	itemClearedAt: Map<string, number>;
+	itemMarksDroppedAt: number;
+	/** Services whose next read is a readOne (GraphQL `_by_id`): that read depends on its item only. */
+	singleReads: WeakMap<object, string[]>;
 	/** Set on install; patched functions call through these so a reloaded extension uses its newest code. */
 	handlers: {
 		clear: (cache: KeyvLike) => Promise<void>;
 		set: (cache: KeyvLike, key: string, value: unknown, ttl?: number) => Promise<unknown>;
 		tick: () => Promise<void>;
+		/** Optional: handlers of an older version (extension reload) lack it until the next install. */
+		read?: (service: any, query: unknown) => Promise<void>;
 	} | null;
 	env: Record<string, unknown>;
 	database: any;
@@ -147,6 +164,7 @@ const MAX_RECENT = 200;
 const HISTORY_HOURS = 24;
 const HOUR = 3_600_000;
 const DELETE_CHUNK = 500;
+const MAX_ITEM_MARKS = 20_000;
 
 export const WRITE_METHODS: Record<string, WriteAction> = {
 	createOne: 'create',
@@ -200,6 +218,9 @@ function freshRuntime(): Runtime {
 		fullClearedAt: 0,
 		anyClearedAt: 0,
 		clearedAt: new Map(),
+		itemClearedAt: new Map(),
+		itemMarksDroppedAt: 0,
+		singleReads: new WeakMap(),
 		handlers: null,
 		env: {},
 		database: null,
@@ -257,6 +278,20 @@ export function fieldsOf(method: string, args: unknown[], primaryKey: string | u
 	return fields;
 }
 
+/** Items a write changes, from the method's arguments: [] when it only creates, null when it can't tell. */
+export function keysOf(method: string, args: unknown[], primaryKey: string | undefined): string[] | null {
+	const list = (value: unknown) => (Array.isArray(value) ? value : [value]).filter((key) => key !== undefined && key !== null).map(String);
+	if (method === 'createOne' || method === 'createMany') return [];
+	if (method === 'updateMany' || method === 'deleteMany') return Array.isArray(args[0]) ? list(args[0]) : null;
+	if ((method === 'updateBatch' || method === 'upsertMany') && Array.isArray(args[0]) && primaryKey) {
+		const keys = (args[0] as unknown[]).map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>)[primaryKey] : undefined));
+		// upsert: an entry without a key is a new item; update: one without a key can't be told.
+		if (method === 'updateBatch' && keys.some((key) => key === undefined || key === null)) return null;
+		return list(keys);
+	}
+	return null;
+}
+
 /** Wraps the ItemsService write methods once per process. */
 export function patchItemsService(ItemsService: any, rt = runtime()): string[] {
 	const missing: string[] = [];
@@ -276,12 +311,13 @@ export function patchItemsService(ItemsService: any, rt = runtime()): string[] {
 				collection: this.collection,
 				action,
 				fields: fieldsOf(method, args, primaryKey),
+				keys: keysOf(method, args, primaryKey),
 				parent: parent && !parent.done ? parent : null,
 				touched: [],
 				done: false,
 			};
 			// Tell every open parent write about this nested write: the parent's clear has to cover it.
-			for (let up = ctx.parent; up; up = up.parent) up.touched.push({ collection: ctx.collection, action: ctx.action, fields: ctx.fields });
+			for (let up = ctx.parent; up; up = up.parent) up.touched.push({ collection: ctx.collection, action: ctx.action, fields: ctx.fields, keys: ctx.keys });
 			return rt.writeContext.run(ctx, async () => {
 				try {
 					return await original.apply(this, args);
@@ -295,7 +331,92 @@ export function patchItemsService(ItemsService: any, rt = runtime()): string[] {
 		proto[method] = wrapped;
 	}
 	rt.patchedMethods = missing.length === 0;
+	patchReads(proto, rt);
 	return missing;
+}
+
+/**
+ * Wraps ItemsService.readByQuery (readOne, readMany and readSingleton use it too) so a GraphQL request learns which
+ * collections its response reads. Outside a GraphQL request it only passes through. Without it GraphQL responses
+ * count as "uses everything", as before, so a missing method is not a problem.
+ */
+function patchReads(proto: any, rt: Runtime) {
+	const readOne = proto.readOne;
+	if (typeof readOne === 'function' && !readOne.__cacheManager) {
+		const wrappedOne = function (this: any, key: unknown, ...rest: unknown[]) {
+			if (rt.requestContext.getStore()?.graphql && rt.config.items && rt.config.targeted && this) rt.singleReads.set(this, [String(key)]);
+			return readOne.call(this, key, ...rest);
+		};
+		(wrappedOne as any).__cacheManager = true;
+		(wrappedOne as any).__original = readOne;
+		proto.readOne = wrappedOne;
+	}
+	const original = proto.readByQuery;
+	if (typeof original !== 'function' || original.__cacheManager) return;
+	const wrapped = async function (this: any, ...args: unknown[]) {
+		const request = rt.requestContext.getStore();
+		if (request?.graphql && rt.handlers?.read) {
+			try {
+				await rt.handlers.read(this, args[0]);
+			} catch (error) {
+				request.deps.add(ANY);
+				rt.logger?.warn(error, `${LOG_PREFIX} could not work out what a GraphQL read depends on; the response is cleared on every change`);
+			}
+		}
+		return original.apply(this, args);
+	};
+	(wrapped as any).__cacheManager = true;
+	(wrapped as any).__original = original;
+	proto.readByQuery = wrapped;
+}
+
+/** Adds what one ItemsService read inside a GraphQL request depends on, and keeps the response's lifetime up to date. */
+export async function trackRead(rt: Runtime, service: any, query: unknown) {
+	const request = rt.requestContext.getStore();
+	const graphql = request?.graphql;
+	if (!request || !graphql) return;
+	const schema: SchemaLike = service?.schema ?? graphql.schema;
+	const collection = service?.collection;
+	if (typeof collection !== 'string' || !schema?.collections?.[collection]) {
+		request.deps.add(ANY);
+		return;
+	}
+	const keys = service ? rt.singleReads.get(service) : undefined;
+	if (keys) {
+		rt.singleReads.delete(service);
+		const items = await itemDependencies(rt, schema, collection, { sanitizedQuery: query, accountability: { admin: graphql.admin } }, keys);
+		if (items) {
+			for (const dep of items) request.deps.add(dep);
+			applyRequestTtl(rt, request, graphql.res);
+			return;
+		}
+	}
+	const deps = queryDependencies(schema, collection, query as any);
+	if (!graphql.admin) await addPermissionDeps(rt, schema, deps);
+	for (const dep of deps) request.deps.add(dep);
+	applyRequestTtl(rt, request, graphql.res);
+}
+
+/** The lifetime of a response from its dependencies; res.locals.cacheTTL also sets the Cache-Control header. */
+function applyRequestTtl(rt: Runtime, request: RequestContext, res: any) {
+	const global = globalTtlMs(rt.env);
+	const collections = new Set([...request.deps].map((dep) => collectionOfItemTag(dep) ?? dep));
+	const ttl = ttlFor(rt.config, collections, global);
+	request.ttl = ttl === global ? null : ttl;
+	if (request.ttl !== null && res?.locals) res.locals.cacheTTL = request.ttl;
+}
+
+/**
+ * Before a GraphQL response is stored: only when every root field is a plain collection read did the read tracking see
+ * everything. Otherwise (server_info, users_me, collections …) the response counts as "uses everything".
+ */
+export function settleGraphql(request: RequestContext) {
+	const graphql = request.graphql;
+	if (!graphql || graphql.settled) return;
+	graphql.settled = true;
+	const params = graphql.res?.locals?.graphqlParams;
+	const known = (collection: string) => !!graphql.schema?.collections?.[collection];
+	if (!params || !tracksAllReads(params.document, params.operationName, graphql.scope, known)) request.deps.add(ANY);
 }
 
 /** Wraps clear() and set() of Directus' response cache once per process. */
@@ -319,6 +440,8 @@ async function fullClear(rt: Runtime, cache: KeyvLike, event: Omit<ClearEvent, '
 	rt.seq++;
 	rt.fullClearedAt = rt.anyClearedAt = rt.seq;
 	rt.clearedAt.clear();
+	rt.itemClearedAt.clear();
+	rt.itemMarksDroppedAt = 0;
 	rt.index.clear();
 	rt.expiry.clear();
 	rt.permissionDeps = null;
@@ -368,10 +491,13 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 		return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${wide.collection} can change any cached response` });
 	}
 	const collections = [...new Set(clearing.map((touch) => touch.collection))];
-	const purged = [...collections, ...bookkeeping.map((touch) => touch.collection)];
+	const items = rt.config.items ? itemTagsOf(clearing) : [];
+	const purged = [...collections, ...bookkeeping.map((touch) => touch.collection), ...items];
 	rt.seq++;
 	rt.anyClearedAt = rt.seq;
-	for (const collection of purged) rt.clearedAt.set(collection, rt.seq);
+	for (const collection of collections) rt.clearedAt.set(collection, rt.seq);
+	for (const touch of bookkeeping) rt.clearedAt.set(touch.collection, rt.seq);
+	for (const tag of items) markItem(rt, tag);
 	let keys: string[];
 	if (rt.shared) {
 		// Every server's responses: the sets in Redis. Without them it can't know what others stored, so clear everything.
@@ -395,6 +521,27 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 	});
 }
 
+/** Item tags a write clears: the changed items, or all of the collection's items when the keys are unknown. */
+function itemTagsOf(writes: Touch[]): string[] {
+	const tags = new Set<string>();
+	for (const touch of writes) {
+		if (touch.keys === null) tags.add(itemTag(touch.collection));
+		else for (const key of touch.keys) tags.add(itemTag(touch.collection, key));
+	}
+	return [...tags];
+}
+
+function markItem(rt: Runtime, tag: string) {
+	rt.itemClearedAt.delete(tag);
+	rt.itemClearedAt.set(tag, rt.seq);
+	if (rt.itemClearedAt.size <= MAX_ITEM_MARKS) return;
+	for (const [old, seq] of rt.itemClearedAt) {
+		if (rt.itemClearedAt.size <= MAX_ITEM_MARKS / 2) break;
+		rt.itemClearedAt.delete(old);
+		rt.itemMarksDroppedAt = Math.max(rt.itemMarksDroppedAt, seq);
+	}
+}
+
 function verb(action: WriteAction): string {
 	return { create: 'Created', update: 'Changed', delete: 'Deleted', upsert: 'Saved' }[action];
 }
@@ -409,13 +556,18 @@ function skipReason(ctx: Touch, rule = DEFAULT_RULE): string {
 export function isStale(rt: Runtime, request: RequestContext): boolean {
 	if (rt.fullClearedAt > request.start) return true;
 	if (request.deps.has(ANY)) return rt.anyClearedAt > request.start;
-	for (const dep of request.deps) if ((rt.clearedAt.get(dep) ?? 0) > request.start) return true;
+	for (const dep of request.deps) {
+		if (collectionOfItemTag(dep) !== null) {
+			if ((rt.itemClearedAt.get(dep) ?? 0) > request.start || rt.itemMarksDroppedAt > request.start) return true;
+		} else if ((rt.clearedAt.get(dep) ?? 0) > request.start) return true;
+	}
 	return false;
 }
 
 /** What a set() call does. Exported for tests. */
 export async function handleSet(rt: Runtime, cache: KeyvLike, key: string, value: unknown, ttl?: number) {
 	const request = rt.requestContext.getStore();
+	if (request) settleGraphql(request);
 	if (request?.ttl) ttl = request.ttl;
 	const result = await rt.originals!.set.call(cache, key, value, ttl);
 	if (typeof key !== 'string') return result;
@@ -471,6 +623,20 @@ async function permissionDependencies(rt: Runtime, schema: SchemaLike): Promise<
 	return rt.permissionDeps;
 }
 
+/** Adds the collections that permission filters of these collections reach (an app's response depends on them too). */
+async function addPermissionDeps(rt: Runtime, schema: SchemaLike, deps: Set<string>) {
+	const permissions = await permissionDependencies(rt, schema);
+	const queue = [...deps];
+	while (queue.length) {
+		for (const dep of permissions.get(queue.pop()!) ?? []) {
+			if (!deps.has(dep)) {
+				deps.add(dep);
+				queue.push(dep);
+			}
+		}
+	}
+}
+
 /** Dependencies and lifetime of the answer to this request. Exported for tests. */
 export async function describeRequest(rt: Runtime, req: any): Promise<{ deps: Set<string>; ttl: number | null }> {
 	const global = globalTtlMs(rt.env);
@@ -481,24 +647,53 @@ export async function describeRequest(rt: Runtime, req: any): Promise<{ deps: Se
 	if (!collection || !schema) return { deps: new Set([ANY]), ttl: null };
 
 	const deps = queryDependencies(schema, collection, req.sanitizedQuery);
+	if (req.accountability?.admin !== true) await addPermissionDeps(rt, schema, deps);
+	const ttl = ttlFor(rt.config, deps, global);
+	const single = rt.config.items && rt.config.targeted ? itemsOfPath(pathname) : null;
+	if (single && single.collection === collection) {
+		const items = await itemDependencies(rt, schema, collection, req, single.keys);
+		if (items) return { deps: items, ttl: ttl === global ? null : ttl };
+	}
+	return { deps, ttl: ttl === global ? null : ttl };
+}
+
+/**
+ * A single-item read: the item tags instead of the collection, so a change to other items of the collection keeps it.
+ * null (use the collection) when the answer reaches its own collection through relations too, e.g. a parent page.
+ */
+async function itemDependencies(rt: Runtime, schema: SchemaLike, collection: string, req: any, keys: string[]): Promise<Set<string> | null> {
+	const related = queryDependencies(schema, collection, req.sanitizedQuery, false);
+	if (related.has(collection)) return null;
 	if (req.accountability?.admin !== true) {
 		const permissions = await permissionDependencies(rt, schema);
-		const queue = [...deps];
-		while (queue.length) {
-			for (const dep of permissions.get(queue.pop()!) ?? []) {
-				if (!deps.has(dep)) {
-					deps.add(dep);
-					queue.push(dep);
-				}
-			}
-		}
+		const seeded = new Set([...related, collection]);
+		await addPermissionDeps(rt, schema, seeded);
+		for (const dep of seeded) if (permissions.get(dep)?.has(collection)) return null;
+		seeded.delete(collection);
+		for (const dep of seeded) related.add(dep);
 	}
-	const ttl = ttlFor(rt.config, deps, global);
-	return { deps, ttl: ttl === global ? null : ttl };
+	for (const key of keys) related.add(itemTag(collection, key));
+	related.add(itemTag(collection));
+	return related;
 }
 
 function hasTtlRules(config: RulesConfig): boolean {
 	return Object.values(config.collections).some((rule) => rule.ttl);
+}
+
+/**
+ * Statistics per collection: a single-item response has the tag `pages#` (plus one per item), so `pages#` counts it
+ * under pages and the per-item tags are left out.
+ */
+export function foldItemTags(counts: Record<string, number>): Record<string, number> {
+	const folded: Record<string, number> = {};
+	for (const [tag, value] of Object.entries(counts)) {
+		const collection = collectionOfItemTag(tag);
+		if (collection !== null && tag !== itemTag(collection)) continue;
+		const name = collection ?? tag;
+		folded[name] = (folded[name] ?? 0) + value;
+	}
+	return folded;
 }
 
 /** Express middleware for init('middlewares.after'): runs after Directus' cache check, before the routes. */
@@ -509,6 +704,18 @@ export function requestMiddleware(rt = runtime()) {
 		if (!rt.cache || (!rt.config.targeted && !hasTtlRules(rt.config)) || (req.method !== 'GET' && !isGraphql)) return next();
 		const startOf = rt.shared ? sharedStep(rt, 'read the clear counter', () => rt.shared!.start()).then((value) => value ?? Number.MAX_SAFE_INTEGER) : Promise.resolve(rt.seq);
 		let start = rt.seq;
+		const scope = isGraphql ? graphqlScope(String(req.originalUrl ?? '').split('?')[0] ?? '') : null;
+		if (scope && req.schema) {
+			// GraphQL: the reads it makes tell what the response uses (see trackRead); settleGraphql checks the rest.
+			startOf.then(
+				(value) => {
+					const graphql: GraphqlRequest = { res, schema: req.schema, admin: req.accountability?.admin === true, scope, settled: false };
+					rt.requestContext.run({ deps: new Set(), start: value, graphql }, () => next());
+				},
+				(error) => next(error),
+			);
+			return;
+		}
 		Promise.all([describeRequest(rt, req), startOf.then((value) => (start = value))]).then(
 			([{ deps, ttl }]) => {
 				if (ttl !== null) res.locals.cacheTTL = ttl;
@@ -540,6 +747,7 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 		clear: (cache) => handleClear(rt, cache),
 		set: (cache, key, value, ttl) => handleSet(rt, cache, key, value, ttl),
 		tick: () => tick(rt),
+		read: (service, query) => trackRead(rt, service, query),
 	};
 	const problems: string[] = [];
 	problems.push(...patchItemsService(ctx.services?.ItemsService, rt));
@@ -684,13 +892,13 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		targetedActive: rt.config.targeted && rt.middlewareRegistered,
 		shared: !!rt.shared,
 		indexed: rt.shared ? -1 : rt.index.size,
-		indexedByCollection: rt.shared ? { ...rt.sharedCounts } : rt.index.counts(),
+		indexedByCollection: foldItemTags(rt.shared ? rt.sharedCounts : rt.index.counts()),
 		since: rt.since,
 		counts: { ...rt.counts, fullMinutes: rt.counts.fullMinutes ?? 0 },
 		recent: [...rt.recent],
 		size,
 		swept: { ...rt.swept },
-		bytesByCollection: rt.index.bytes(),
+		bytesByCollection: foldItemTags(rt.index.bytes()),
 		history: lastDay(rt),
 	};
 }

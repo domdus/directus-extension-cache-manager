@@ -525,7 +525,8 @@ test('ttl vs purge: warn only when the cache is emptied much sooner than the lif
 	const since = new Date(now - 16 * 3_600_000).toISOString();
 	// 7,932 clears in 16 hours: about every 7 seconds.
 	assert.equal(emptiedEveryLabel(7932, since, now), 'about every 7 seconds');
-	assert.equal(emptiedEveryLabel(2, new Date(now - 4 * 3_600_000).toISOString(), now), 'about every 2 hours');
+	assert.equal(emptiedEveryLabel(3, new Date(now - 6 * 3_600_000).toISOString(), now), 'about every 2 hours');
+	assert.equal(emptiedEveryLabel(1, new Date(now - 60_000).toISOString(), now), null, 'one clear is no rhythm');
 	assert.equal(emptiedEveryLabel(0, since, now), null);
 	assert.equal(intervalText(1), 'about every 1 minute');
 	assert.equal(intervalText(3 * 24 * 60), 'about every 3 days');

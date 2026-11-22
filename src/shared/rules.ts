@@ -18,6 +18,11 @@ export type CollectionRule = {
 export type RulesConfig = {
 	/** Clear only the answers that use the changed collection instead of the whole cache. */
 	targeted: boolean;
+	/**
+	 * Advanced, only with `targeted`: a change to some items clears the single-item responses of just those items
+	 * (`/items/pages/5`); lists and every other response that uses the collection still clear.
+	 */
+	items?: boolean;
 	collections: Record<string, CollectionRule>;
 };
 
@@ -144,7 +149,7 @@ export function parseRules(raw: unknown): RulesConfig {
 		};
 		if (!isDefaultRule(rule)) collections[name] = rule;
 	}
-	return { targeted: obj.targeted === true, collections };
+	return { targeted: obj.targeted === true, ...(obj.items === true ? { items: true } : {}), collections };
 }
 
 export type RulesValidation = { ok: true; value: RulesConfig } | { ok: false; errors: string[] };
@@ -154,8 +159,9 @@ export function validateRules(body: unknown, schemaFields: Record<string, string
 	const errors: string[] = [];
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, errors: ['Send a JSON object'] };
 	const input = body as Record<string, unknown>;
-	for (const key of Object.keys(input)) if (!['targeted', 'collections'].includes(key)) errors.push(`Unknown setting "${key}"`);
+	for (const key of Object.keys(input)) if (!['targeted', 'items', 'collections'].includes(key)) errors.push(`Unknown setting "${key}"`);
 	if (input.targeted !== undefined && typeof input.targeted !== 'boolean') errors.push('targeted must be true or false');
+	if (input.items !== undefined && typeof input.items !== 'boolean') errors.push('items must be true or false');
 
 	const collections: Record<string, CollectionRule> = {};
 	const source = input.collections ?? {};
@@ -198,7 +204,7 @@ export function validateRules(body: unknown, schemaFields: Record<string, string
 			if (!isDefaultRule(rule)) collections[name] = rule;
 		}
 	}
-	return errors.length ? { ok: false, errors } : { ok: true, value: { targeted: input.targeted === true, collections } };
+	return errors.length ? { ok: false, errors } : { ok: true, value: { targeted: input.targeted === true, ...(input.items === true ? { items: true } : {}), collections } };
 }
 
 export function sameRules(a: RulesConfig, b: RulesConfig): boolean {
@@ -208,6 +214,7 @@ export function sameRules(a: RulesConfig, b: RulesConfig): boolean {
 function normalize(config: RulesConfig) {
 	return {
 		targeted: config.targeted,
+		items: config.items === true,
 		collections: Object.keys(config.collections)
 			.sort()
 			.filter((name) => !isDefaultRule(config.collections[name]!))
@@ -232,5 +239,5 @@ export function describeRule(rule: CollectionRule): string {
 /** One line for the log. */
 export function describeRules(config: RulesConfig): string {
 	const names = Object.keys(config.collections);
-	return `targeted=${config.targeted}${names.length ? `, ${names.map((name) => `${name}: ${describeRule(config.collections[name]!)}`).join('; ')}` : ''}`;
+	return `targeted=${config.targeted}${config.items ? ', items=true' : ''}${names.length ? `, ${names.map((name) => `${name}: ${describeRule(config.collections[name]!)}`).join('; ')}` : ''}`;
 }

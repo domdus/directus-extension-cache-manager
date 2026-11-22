@@ -5,7 +5,8 @@ import { parseRules, ruleClears, ttlFor, validateRules, DEFAULT_RULE, type Rules
 import { TagIndex } from '../shared/tag-index';
 import { measureStore, measureStoreChunked, memoryStoreOf, storedSizeOf, sweepKeys } from './store-size';
 import { ExpiryQueue } from '../shared/expiry-queue';
-import { applyRules, currentBucket, describeRequest, measure, tick, patchCache, patchItemsService, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
+import { applyRules, currentBucket, describeRequest, foldItemTags, keysOf, measure, tick, patchCache, patchItemsService, requestMiddleware, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
+import { parse } from 'graphql';
 
 /* ---------- schema used by the dependency tests ---------- */
 
@@ -171,6 +172,13 @@ function makeItemsService() {
 			const ignore = env.CACHE_AUTO_PURGE_IGNORE_LIST as string[];
 			return env.CACHE_AUTO_PURGE === true && !ignore.includes(this.collection) && opts?.autoPurgeCache !== false;
 		}
+		/** Like Directus: readOne, readMany and readSingleton all end in readByQuery. */
+		async readByQuery(_query: unknown, _opts?: unknown): Promise<unknown[]> {
+			return [];
+		}
+		async readOne(key: unknown, query: Record<string, unknown> = {}) {
+			return (await this.readByQuery({ ...query, filter: { _and: [{ id: { _eq: key } }, query.filter ?? {}] } }))[0] ?? null;
+		}
 		async createOne(data: Record<string, unknown>, opts: { autoPurgeCache?: boolean; nested?: Array<[string, Record<string, unknown>]> } = {}) {
 			for (const [collection, child] of opts.nested ?? []) await new ItemsService(collection).createOne(child, { autoPurgeCache: opts.autoPurgeCache });
 			if (this.shouldClear(opts)) await this.cache.clear();
@@ -211,8 +219,13 @@ async function setup(config: RulesConfig) {
 	const rt = runtime();
 	rt.env = env;
 	rt.handlers = null;
-	const { handleClear, handleSet, tick } = await import('./targeted');
-	rt.handlers = { clear: (c) => handleClear(rt, c), set: (c, k, v, t) => handleSet(rt, c, k, v, t), tick: () => tick(rt) };
+	const { handleClear, handleSet, tick, trackRead } = await import('./targeted');
+	rt.handlers = {
+		clear: (c) => handleClear(rt, c),
+		set: (c, k, v, t) => handleSet(rt, c, k, v, t),
+		tick: () => tick(rt),
+		read: (service, query) => trackRead(rt, service, query),
+	};
 	assert.deepEqual(patchItemsService(Items, rt), []);
 	patchCache(cache as any, rt);
 	rt.middlewareRegistered = true;
@@ -546,4 +559,216 @@ test('statistics: several whole-cache clears in the same minute count as one min
 	await (cache as any).clear();
 	assert.equal(rt.counts.full >= 3, true);
 	assert.ok(rt.counts.fullMinutes - before <= 1, 'one minute, not three');
+});
+
+/* ---------- GraphQL: dependencies from the reads a query makes ---------- */
+
+/** Runs one GraphQL request through the middleware: `body` reads like Directus' resolvers, then the response is stored. */
+async function graphqlRequest(
+	query: string,
+	body: (reader: (collection: string) => any) => Promise<void>,
+	options: { path?: string; admin?: boolean; key?: string } = {},
+) {
+	const rt = runtime();
+	const res: any = { locals: {} };
+	const req = { method: 'POST', originalUrl: options.path ?? '/graphql', schema, accountability: { admin: options.admin ?? true } };
+	// The readers see the full test schema (with relations), like Directus' services get req.schema.
+	const Reader = class extends Items {
+		schema = schema as any;
+	};
+	await new Promise<void>((resolve, reject) => {
+		requestMiddleware(rt)(req, res, (error?: unknown) => {
+			if (error) return reject(error);
+			// Directus' parseGraphQL middleware, then the resolvers, then respond (which stores the response).
+			res.locals.graphqlParams = { document: parse(query), query, operationName: null };
+			body((collection) => new Reader(collection))
+				.then(async () => {
+					const key = options.key ?? 'gql';
+					await (cache as any).set(key, 'value', res.locals.cacheTTL ?? 43_200_000);
+					await (cache as any).set(`${key}__expires_at`, 'exp', res.locals.cacheTTL ?? 43_200_000);
+				})
+				.then(resolve, reject);
+		});
+	});
+	return res;
+}
+
+test('graphql: a query depends on the collections its reads reach, not on everything', async () => {
+	await setup({ targeted: true, collections: {} });
+	await graphqlRequest('{ pages { title service { name } } }', (read) => read('pages').readByQuery({ fields: ['title', 'service.name'] }));
+	assert.deepEqual(runtime().index.counts(), { pages: 1, services: 1 });
+
+	await new Items('visits').createOne({ page: 1 });
+	assert.ok(cache.store.has('gql'), 'a visit does not clear a query that does not read visits');
+	await new Items('services').updateMany([1], { name: 'B2' });
+	assert.ok(!cache.store.has('gql'), 'a renamed service clears the query that shows service names');
+});
+
+test('graphql: several root fields, _by_id and aggregates add up', async () => {
+	await setup({ targeted: true, collections: {} });
+	await graphqlRequest('query Home { pages_by_id(id: 1) { title } visits_aggregated { count { id } } }', async (read) => {
+		await read('pages').readOne(1, { fields: ['title'] });
+		await read('visits').readByQuery({ aggregate: { count: ['id'] } });
+	});
+	const counts = runtime().index.counts();
+	assert.equal(counts['*'], undefined, 'not "uses everything"');
+	assert.ok(counts.pages && counts.visits);
+	await new Items('brands').createOne({ name: 'x' });
+	assert.ok(cache.store.has('gql'));
+	await new Items('visits').createOne({ page: 1 });
+	assert.ok(!cache.store.has('gql'));
+});
+
+test('graphql: root fields that are not collection reads make it "uses everything"', async () => {
+	await setup({ targeted: true, collections: {} });
+	await graphqlRequest('{ server_info { project { project_name } } users { id } }', (read) => read('directus_users').readByQuery({ fields: ['id'] }), {
+		path: '/graphql/system',
+	});
+	assert.equal(runtime().index.counts()['*'], 1);
+	await new Items('visits').createOne({ page: 1 });
+	assert.ok(!cache.store.has('gql'), 'any change clears it, like before');
+
+	await setup({ targeted: true, collections: {} });
+	await graphqlRequest('{ users_me { id } }', (read) => read('directus_users').readOne(1, { fields: ['id'] }), { path: '/graphql/system' });
+	assert.equal(runtime().index.counts()['*'], 1, 'users_me reads the current user, not a fixed query');
+});
+
+test('graphql: a read of an unknown collection or a broken document makes it "uses everything"', async () => {
+	await setup({ targeted: true, collections: {} });
+	await graphqlRequest('{ pages { title } }', (read) => read('not_in_schema').readByQuery({}));
+	assert.equal(runtime().index.counts()['*'], 1);
+
+	await setup({ targeted: true, collections: {} });
+	await graphqlRequest('query A { pages { id } } query B { visits { id } }', (read) => read('pages').readByQuery({ fields: ['id'] }));
+	assert.equal(runtime().index.counts()['*'], 1, 'two operations and no operationName: can\'t tell which one ran');
+});
+
+test('graphql: only __typename reads nothing, so only a whole-cache clear removes it', async () => {
+	await setup({ targeted: true, collections: {} });
+	await graphqlRequest('{ __typename }', async () => {});
+	await new Items('pages').updateMany([1], { title: 'x' });
+	assert.ok(cache.store.has('gql'));
+	await (cache as any).clear();
+	assert.ok(!cache.store.has('gql'));
+});
+
+test('graphql: permission filters of an app add their collections; lifetimes per collection apply', async () => {
+	const rt = await setup({ targeted: true, collections: { visits: { ...DEFAULT_RULE, ttl: '5m' } } });
+	const rows = [{ collection: 'visits', permissions: JSON.stringify({ page: { service: { name: { _eq: 'A1' } } } }) }];
+	rt.database = () => ({ select: () => ({ where: async () => rows }) });
+	const seen: Array<number | undefined> = [];
+	const original = rt.originals!.set;
+	rt.originals!.set = async function (this: any, key: string, value: unknown, ttl?: number) {
+		seen.push(ttl);
+		return original.call(this, key, value, ttl);
+	};
+	const res = await graphqlRequest('{ visits { id } }', (read) => read('visits').readByQuery({ fields: ['id'] }), { admin: false });
+	assert.equal(res.locals.cacheTTL, 300_000, 'Cache-Control and __expires_at follow the rule');
+	assert.deepEqual(seen, [300_000, 300_000]);
+	await new Items('services').updateMany([1], { name: 'B2' });
+	assert.ok(!cache.store.has('gql'), 'a service change can change which visits the app may see');
+});
+
+test('graphql: reads outside a GraphQL request change nothing', async () => {
+	await setup({ targeted: true, collections: {} });
+	const Reader = class extends Items {
+		schema = schema as any;
+	};
+	await new Reader('pages').readByQuery({ fields: ['title'] });
+	await cacheAnswer('rest', ['visits']);
+	assert.deepEqual(runtime().index.counts(), { visits: 1 });
+});
+
+/* ---------- item-level clearing (advanced) ---------- */
+
+test('keysOf: the items a write changes', () => {
+	assert.deepEqual(keysOf('updateMany', [[1, 2], {}], 'id'), ['1', '2']);
+	assert.deepEqual(keysOf('deleteMany', [['a']], 'id'), ['a']);
+	assert.deepEqual(keysOf('createOne', [{}], 'id'), []);
+	assert.deepEqual(keysOf('createMany', [[{}]], 'id'), []);
+	assert.deepEqual(keysOf('updateBatch', [[{ id: 3, title: 'x' }]], 'id'), ['3']);
+	assert.equal(keysOf('updateBatch', [[{ title: 'x' }]], 'id'), null, 'without a key it cannot tell');
+	assert.deepEqual(keysOf('upsertMany', [[{ id: 4 }, { title: 'new' }]], 'id'), ['4'], 'an entry without a key is new');
+	assert.equal(keysOf('updateMany', ['not-a-list', {}], 'id'), null);
+});
+
+test('items: a single-item read depends on its item, related collections stay whole', async () => {
+	const rt = await setup({ targeted: true, items: true, collections: {} });
+	rt.database = () => ({ select: () => ({ where: async () => [] }) });
+	const req = (url: string, fields: string[], admin = true) => ({ originalUrl: url, schema, sanitizedQuery: { fields }, accountability: { admin } });
+	const detail = await describeRequest(rt, req('/items/pages/5?fields=title,service.name', ['title', 'service.name']));
+	assert.deepEqual([...detail.deps].sort(), ['pages#', 'pages#5', 'services']);
+	const two = await describeRequest(rt, req('/items/pages/5,6', ['title']));
+	assert.deepEqual([...two.deps].sort(), ['pages#', 'pages#5', 'pages#6']);
+	const list = await describeRequest(rt, req('/items/pages', ['title']));
+	assert.deepEqual([...list.deps], ['pages']);
+	const self = await describeRequest(rt, req('/items/pages/5', ['blocks.pages_id.title']));
+	assert.ok(self.deps.has('pages'), 'reaches pages again through relations: the whole collection');
+
+	const off = await setup({ targeted: true, collections: {} });
+	assert.deepEqual([...(await describeRequest(off, req('/items/pages/5', ['title']))).deps], ['pages'], 'off by default');
+});
+
+test('items: permission filters that reach the collection again keep it whole', async () => {
+	const rt = await setup({ targeted: true, items: true, collections: {} });
+	const rows = [{ collection: 'pages_blocks', permissions: JSON.stringify({ pages_id: { title: { _nnull: true } } }) }];
+	rt.database = () => ({ select: () => ({ where: async () => rows }) });
+	const req = { originalUrl: '/items/pages/5', schema, sanitizedQuery: { fields: ['title', 'blocks.id'] }, accountability: { admin: false } };
+	assert.ok((await describeRequest(rt, req)).deps.has('pages'));
+	const plain = { ...req, sanitizedQuery: { fields: ['title'] } };
+	assert.deepEqual([...(await describeRequest(rt, plain)).deps].sort(), ['pages#', 'pages#5']);
+});
+
+test('items: a change to some items clears their single-item responses and the lists', async () => {
+	await setup({ targeted: true, items: true, collections: {} });
+	const fill = async () => {
+		await cacheAnswer('page5', ['services', 'pages#5', 'pages#']);
+		await cacheAnswer('page6', ['services', 'pages#6', 'pages#']);
+		await cacheAnswer('list', ['pages']);
+	};
+	const kept = () => ['page5', 'page6', 'list'].filter((key) => cache.store.has(key));
+	await fill();
+	await new Items('pages').updateMany([5], { title: 'x' });
+	assert.deepEqual(kept(), ['page6']);
+	await fill();
+	await new Items('pages').createOne({ title: 'new' });
+	assert.deepEqual(kept(), ['page5', 'page6'], 'a new item only changes lists');
+	await fill();
+	await new Items('pages').updateBatch([{ title: 'x' }]);
+	assert.deepEqual(kept(), [], 'unknown items: every single-item response of pages');
+	await fill();
+	await new Items('services').updateMany([1], { name: 'x' });
+	assert.deepEqual(kept(), ['list'], 'related collections clear as a whole');
+	assert.deepEqual(foldItemTags(runtime().index.counts()), { pages: 1 });
+});
+
+test('items: an answer read before its item changed is dropped, other items are kept', async () => {
+	await setup({ targeted: true, items: true, collections: {} });
+	const rt = runtime();
+	const start = rt.seq;
+	await new Items('pages').updateMany([5], { title: 'x' });
+	await rt.requestContext.run({ deps: new Set(['pages#5', 'pages#']), start }, () => (cache as any).set('page5', 'old', 1000));
+	await rt.requestContext.run({ deps: new Set(['pages#6', 'pages#']), start }, () => (cache as any).set('page6', 'ok', 1000));
+	assert.ok(!cache.store.has('page5'));
+	assert.ok(cache.store.has('page6'));
+});
+
+test('foldItemTags: single-item responses count under their collection', () => {
+	assert.deepEqual(foldItemTags({ pages: 2, 'pages#': 3, 'pages#5': 1, services: 1 }), { pages: 5, services: 1 });
+});
+
+test('items: GraphQL _by_id depends on its item; lifetimes of the collection still apply', async () => {
+	await setup({ targeted: true, items: true, collections: { pages: { ...DEFAULT_RULE, ttl: '5m' } } });
+	const res = await graphqlRequest('{ pages_by_id(id: 5) { title service { name } } pages { id } }', async (read) => {
+		await read('pages').readOne(5, { fields: ['title', 'service.name'] });
+		await read('pages').readByQuery({ fields: ['id'] });
+	});
+	assert.equal(res.locals.cacheTTL, 300_000);
+	await setup({ targeted: true, items: true, collections: {} });
+	await graphqlRequest('{ pages_by_id(id: 5) { title service { name } } }', (read) => read('pages').readOne(5, { fields: ['title', 'service.name'] }));
+	assert.deepEqual(runtime().index.counts(), { 'pages#5': 1, 'pages#': 1, services: 1 });
+	await new Items('pages').updateMany([6], { title: 'x' });
+	assert.ok(cache.store.has('gql'), 'another page changed');
+	await new Items('pages').updateMany([5], { title: 'x' });
+	assert.ok(!cache.store.has('gql'));
 });

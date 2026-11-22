@@ -105,6 +105,15 @@
 					</button>
 				</div>
 
+				<div v-if="draft.targeted" class="advanced">
+					<v-checkbox v-model="draft.items" label="Clear single items (advanced)" />
+					<p class="explain">
+						A change to some items also keeps the single-item responses of the other items, such as
+						<code>/items/pages/5</code> and GraphQL <code>pages_by_id</code>. Lists still clear. Helps when one collection
+						is read item by item and its items change often, such as stock or prices.
+					</p>
+				</div>
+
 				<p class="explain after-choice">
 					See what each change cleared in <router-link to="/cache-manager/statistics">Statistics</router-link>.
 				</p>
@@ -469,5 +478,12 @@ p.explain.after-choice {
 }
 .after-choice a {
 	color: var(--theme--primary, var(--primary));
+}
+.advanced {
+	margin-top: 24px;
+}
+.advanced p.explain {
+	margin: 8px 0 0 32px;
+	max-width: 760px;
 }
 </style>

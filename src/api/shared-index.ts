@@ -13,7 +13,7 @@ type RedisMulti = {
 	sunion(...keys: string[]): RedisMulti;
 	del(...keys: string[]): RedisMulti;
 	incr(key: string): RedisMulti;
-	set(key: string, value: string): RedisMulti;
+	set(key: string, value: string, ...options: Array<string | number>): RedisMulti;
 	mset(...pairs: string[]): RedisMulti;
 	scard(key: string): RedisMulti;
 	exec(): Promise<Array<[Error | null, unknown]> | null>;
@@ -26,6 +26,9 @@ export function redisOf(cache: unknown): RedisLike | null {
 	const client = store?.redis ?? store?.client;
 	return client && typeof client.multi === 'function' && typeof client.smembers === 'function' ? (client as RedisLike) : null;
 }
+
+/** How long a mark for one item (`pages#5`) stays: far longer than any request takes. */
+const ITEM_MARK_MS = 10 * 60_000;
 
 function results(replies: Array<[Error | null, unknown]> | null): unknown[] {
 	if (!replies) throw new Error('Redis transaction was aborted');
@@ -85,11 +88,15 @@ export class SharedIndex {
 	async markCleared(collections: string[] | 'full') {
 		const [seq] = results(await this.redis.multi().incr(`${this.prefix}:seq`).exec());
 		const value = String(seq);
+		const names = collections === 'full' ? [] : collections;
 		const pairs =
 			collections === 'full'
 				? [`${this.prefix}:cleared:full`, value, `${this.prefix}:cleared:any`, value]
-				: [`${this.prefix}:cleared:any`, value, ...collections.flatMap((name) => [`${this.prefix}:cleared:t:${name}`, value])];
-		results(await this.redis.multi().mset(...pairs).exec());
+				: [`${this.prefix}:cleared:any`, value, ...names.filter((name) => !name.includes('#')).flatMap((name) => [`${this.prefix}:cleared:t:${name}`, value])];
+		const multi = this.redis.multi().mset(...pairs);
+		// Item marks (`pages#5`) only matter to requests running right now: let them expire instead of piling up.
+		for (const name of names) if (name.includes('#')) multi.set(`${this.prefix}:cleared:t:${name}`, value, 'PX', ITEM_MARK_MS);
+		results(await multi.exec());
 	}
 
 	/** Was the whole cache, or one of these collections, cleared after the request began? Then don't keep its response. */
@@ -115,7 +122,8 @@ export class SharedIndex {
 
 	/** Cached responses per collection, as far as the sets know (expired entries count until their set is cleared). */
 	async counts(): Promise<Record<string, number>> {
-		const tags = await this.redis.smembers(`${this.prefix}:tags`);
+		// Per-item sets (`pages#5`) are left out: Statistics counts single-item responses through `pages#`.
+		const tags = (await this.redis.smembers(`${this.prefix}:tags`)).filter((tag) => !tag.includes('#') || tag.endsWith('#'));
 		if (!tags.length) return {};
 		const multi = this.redis.multi();
 		for (const tag of tags) multi.scard(this.tagKey(tag));

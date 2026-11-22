@@ -35,7 +35,7 @@ export type RulesState = {
 const base = `/${EXTENSION_ID}`;
 
 const data = ref<RulesState | null>(null);
-const draft = reactive<RulesConfig>({ targeted: false, collections: {} });
+const draft = reactive<RulesConfig>({ targeted: false, items: false, collections: {} });
 const loading = ref(false);
 const saving = ref(false);
 const error = ref<string | null>(null);
@@ -48,6 +48,7 @@ function errorText(err: any): string {
 function copy(config: RulesConfig): RulesConfig {
 	return {
 		targeted: config.targeted,
+		items: config.items === true,
 		collections: Object.fromEntries(Object.entries(config.collections).map(([name, rule]) => [name, { ...rule, skipFields: [...rule.skipFields] }])),
 	};
 }
@@ -56,6 +57,7 @@ function resetDraft() {
 	if (!data.value) return;
 	const next = copy(data.value.config);
 	draft.targeted = next.targeted;
+	draft.items = next.items;
 	draft.collections = next.collections;
 }
 

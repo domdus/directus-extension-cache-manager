@@ -34,6 +34,7 @@ class FakeRedis implements RedisLike {
 			}
 			case 'set':
 				this.strings.set(args[0], args[1]);
+				if (args[2] === 'PX') this.ttl.set(args[0], args[3]);
 				return 'OK';
 			case 'mset':
 				for (let i = 0; i < args.length; i += 2) this.strings.set(args[i], args[i + 1]);
@@ -110,4 +111,18 @@ test('shared index: found only behind a Redis store', () => {
 	assert.equal(redisOf({ opts: { store: { redis: client } } }), client);
 	assert.equal(redisOf({ store: { redis: client } }), client);
 	assert.equal(redisOf({ opts: { store: new Map() } }), null);
+});
+
+test('shared index: item marks expire, item sets stay out of the counts', async () => {
+	const redis = new FakeRedis();
+	const index = new SharedIndex(redis, 'cm');
+	const start = await index.start();
+	await index.add('page5', ['services', 'pages#5', 'pages#'], 60_000);
+	await index.add('list', ['pages'], 60_000);
+	await index.markCleared(['pages', 'pages#7']);
+	assert.equal(redis.ttl.get('cm:cleared:t:pages#7'), 600_000, 'an item mark expires');
+	assert.equal(redis.ttl.has('cm:cleared:t:pages'), false, 'a collection mark stays');
+	assert.equal(await index.isStale(new Set(['services', 'pages#5', 'pages#']), start), false, 'another item changed');
+	assert.equal(await index.isStale(new Set(['pages#7', 'pages#']), start), true);
+	assert.deepEqual(await index.counts(), { services: 1, 'pages#': 1, pages: 1 });
 });
