@@ -54,7 +54,7 @@ Changes to users, roles, permissions, settings, flows or the data model still cl
 
 ### Clear single items (advanced)
 
-With this on, a change to page 5 only clears the single-item responses of page 5, such as `/items/pages/5` or GraphQL `pages_by_id`. Single-item responses of other pages stay; lists of pages still clear. It helps when a collection is read item by item and its items change often, such as stock or prices. See [Performance](#clear-single-items).
+With this on, a change to page 5 only clears the single-item responses of page 5, such as `/items/pages/5` or GraphQL `pages_by_id` (GraphQL works this way on newer Directus versions, tested on 11.17 and 12.5; on older ones it clears with the collection). Single-item responses of other pages stay; lists of pages still clear. It helps when a collection is read item by item and its items change often, such as stock or prices. See [Performance](#clear-single-items).
 
 ### Rules per collection
 
