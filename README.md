@@ -4,7 +4,7 @@ With **Auto Purge** on, Directus throws away its whole cache on every change. On
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-dark.png" />
-  <img alt="Directus vs. Directus + Cache Manager: twice the reads per second, half the read time, 98 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-light.png" width="800" />
+  <img alt="Directus vs. Directus + Cache Manager: twice the reads per second, half the read time, 98 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-light.png" width="720" />
 </picture>
 
 Measured on a website-like setup, see [Performance](#performance).
@@ -127,7 +127,7 @@ The same setup on two Directus servers sharing one Redis cache, with visits save
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-dark.png" />
-  <img alt="Two Directus servers with Redis: 82 % more reads per second, 98 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-light.png" width="800" />
+  <img alt="Two Directus servers with Redis: 82 % more reads per second, 98 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-light.png" width="720" />
 </picture>
 
 | | Directus | Directus + Cache Manager | Difference |
