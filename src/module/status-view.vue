@@ -73,6 +73,11 @@
 				<v-notice v-if="!state.inSync" type="warning" class="notice">
 					The settings in use differ from what is configured and saved here. Save again or restart Directus.
 				</v-notice>
+				<v-notice v-if="state.env.CACHE_ENABLED && !state.effective.autoPurge" type="info" class="notice">
+					Auto Purge is off, so changes only show up when cached responses expire. To keep almost all of the cache and
+					still show changes right away, turn on Auto Purge and choose Granular in Granular Cache: a change then clears
+					only the cached responses that use the changed collection.
+				</v-notice>
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="tune" /></template>

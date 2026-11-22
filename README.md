@@ -4,7 +4,7 @@ Stop Directus from throwing away its whole cache on every change. Cache Manager 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-dark.png" />
-  <img alt="Directus alone vs. with Cache Manager: twice the reads per second, half the read time, 97 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-light.png" width="800" />
+  <img alt="Directus with Auto Purge vs. with Cache Manager: twice the reads per second, half the read time, 98 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-light.png" width="800" />
 </picture>
 
 Measured on a website-like setup, details under [Performance](#performance).
@@ -134,23 +134,9 @@ What you save applies right away and stays after a restart. **Reset to Configure
 
 ## Performance
 
-Tested on Directus 11.17 with Postgres and the cache in memory, on a website-like setup: 2,000 pages, each with a category, an author and 3 tags. 24 readers request category lists and page details (62 different requests) for 30 seconds, while visits are recorded all the time (5 to 10 per second). Two runs each, averaged.
+Tested on Directus 11.17 with Postgres and the cache in memory, on a website-like setup: 2,000 pages, each with a category, an author and 3 tags. 24 readers request category lists and page details (62 different requests) for 30 seconds, while visits are saved in their own collection all the time (5 to 10 per second). Both sides have Auto Purge on; Cache Manager uses Granular mode without any rules. Two runs each, averaged.
 
-**Visits counted on the page** (a `views_count` field), with Granular mode and one rule: Skip Fields `views_count` on pages, so counting a visit keeps the cache:
-
-| | Directus alone | With Cache Manager | Difference |
-|---|---|---|---|
-| Reads answered from the cache | 1 % | **100 %** | |
-| Reads per second | 216 | **426** | **+97 %** |
-| Median read time | 112 ms | **54 ms** | **−52 %** |
-| Database queries | 31,718 | **949** | **−97 %** |
-| Database CPU time | 8.9 s | **0.7 s** | **−92 %** |
-
-Granular mode without that rule doesn't help here (4 % from the cache), because every visit changes the pages themselves.
-
-**Visits saved in their own collection**, with Granular mode and no rules at all:
-
-| | Directus alone | With Cache Manager | Difference |
+| | Directus with Auto Purge | With Cache Manager | Difference |
 |---|---|---|---|
 | Reads answered from the cache | under 1 % | **100 %** | |
 | Reads per second | 215 | **429** | **+100 %** |
@@ -160,31 +146,29 @@ Granular mode without that rule doesn't help here (4 % from the cache), because 
 
 So Directus answered twice as many reads while the database did about 97 % less work.
 
+If visits are counted in a field on the pages themselves (`views_count`), every visit changes the pages, so add the rule Skip Fields `views_count` on pages. With it, the results were the same as above.
+
 ### Two Directus servers with Redis
 
 The same setup with two Directus servers sharing one Redis cache: readers spread over both servers, visits recorded on the second one.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-dark.png" />
-  <img alt="Two Directus servers with Redis: 74 to 82 % more reads per second, 97 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-light.png" width="800" />
+  <img alt="Two Directus servers with Redis: 82 % more reads per second, 98 % fewer database queries" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/benchmark-redis-light.png" width="800" />
 </picture>
 
-| | Directus alone | With Cache Manager | Difference |
+| | Directus with Auto Purge | With Cache Manager | Difference |
 |---|---|---|---|
-| **Visits counted on the page**: reads per second | 364 | **634** | **+74 %** |
-| Median read time | 47 ms | **38 ms** | **−19 %** |
-| Database queries | 49,692 | **1,305** | **−97 %** |
-| Database CPU time | 12.3 s | **0.9 s** | **−93 %** |
-| **Visits in their own collection**: reads per second | 359 | **654** | **+82 %** |
+| Reads per second | 359 | **654** | **+82 %** |
 | Median read time | 55 ms | **35 ms** | **−36 %** |
 | Database queries | 50,248 | **877** | **−98 %** |
 | Database CPU time | 12.4 s | **0.7 s** | **−94 %** |
 
-A change on one server cleared exactly the cached responses that either server had stored. Without the Skip Fields rule, the page counter made Granular mode about 12 % slower than Directus alone here: every visit cleared nearly all cached responses anyway, and noting them in Redis costs a little extra. That rule is the fix.
+A change on one server cleared exactly the cached responses that either server had stored.
 
 ### Overhead
 
-Cache Manager's own work is within the run-to-run noise: reads from the cache and saves are as fast as without it, and a read that is not cached takes about 3 ms longer in Granular mode with the cache in memory. With Redis, noting each response there adds a little more, as the page counter without its rule shows. The gain grows with slower queries and a database on another server; these tests ran on one machine.
+Cache Manager's own work is within the run-to-run noise: reads from the cache and saves are as fast as without it, and a read that is not cached takes about 3 ms longer in Granular mode with the cache in memory. With Redis, noting each response there adds a little more. The gain grows with slower queries and a database on another server; these tests ran on one machine.
 
 ## Uninstall
 
