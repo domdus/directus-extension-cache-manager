@@ -59,6 +59,6 @@ export function looksSensitive(collection: string): boolean {
 export function suggestionTooltip(collection: string, ttl: string): string {
 	const age = ttl ? `up to ${formatDurationLabel(ttl)}` : 'until the cache expires';
 	return looksSensitive(collection)
-		? `${collection} changes often, but its name suggests apps decide on it (access, payments, purchases). Only stop clearing for it after every app that needs it up to date reads it with Cache-Control: no-store. Otherwise they get responses ${age} old.`
-		: `${collection} changes often. Collections that never clear can be ${age} old for apps that don't ask for fresh data (Cache-Control: no-store).`;
+		? `${collection} changes often, but apps may need it up to date (access, payments, purchases). Only stop clearing it if those apps send Cache-Control: no-store. Otherwise they get data ${age} old.`
+		: `${collection} changes often. If it never clears, apps get its data ${age} old, unless they send Cache-Control: no-store.`;
 }

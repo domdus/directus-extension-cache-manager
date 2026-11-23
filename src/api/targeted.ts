@@ -470,7 +470,7 @@ function ignoreList(env: Record<string, unknown>): string[] {
 export async function handleClear(rt: Runtime, cache: KeyvLike) {
 	const ctx = rt.writeContext.getStore();
 	if (!ctx || ctx.done) {
-		return fullClear(rt, cache, { collection: null, action: null, reason: 'Directus cleared the whole cache (schema, permissions, settings or a manual clear)' });
+		return fullClear(rt, cache, { collection: null, action: null, reason: 'Directus cleared the whole cache (data model, permissions, settings or a manual clear)' });
 	}
 
 	// The write itself plus the nested writes it made. Ignored nested collections don't count (like the root).
@@ -488,7 +488,7 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 	}
 	const wide = clearing.find((touch) => !isTargetable(touch.collection));
 	if (wide) {
-		return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${wide.collection} can change any cached response` });
+		return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `Change in ${wide.collection}, which can affect any response` });
 	}
 	const collections = [...new Set(clearing.map((touch) => touch.collection))];
 	const items = rt.config.items ? itemTagsOf(clearing) : [];
@@ -505,7 +505,7 @@ export async function handleClear(rt: Runtime, cache: KeyvLike) {
 			await rt.shared!.markCleared(purged);
 			return rt.shared!.take([...purged, ANY]);
 		});
-		if (!taken) return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${verb(ctx.action)} in ${ctx.collection} (Redis index not reachable)` });
+		if (!taken) return fullClear(rt, cache, { collection: ctx.collection, action: ctx.action, reason: `${verb(ctx.action)} in ${ctx.collection} (Redis not reachable)` });
 		keys = taken;
 	} else {
 		keys = rt.index.take([...purged, ANY]);
@@ -547,9 +547,9 @@ function verb(action: WriteAction): string {
 }
 
 function skipReason(ctx: Touch, rule = DEFAULT_RULE): string {
-	if (neverClears(rule)) return `${verb(ctx.action)} in ${ctx.collection}, rule never clears`;
+	if (neverClears(rule)) return `${verb(ctx.action)} in ${ctx.collection} (rule: never clear)`;
 	if (ctx.action === 'update' && ctx.fields.length) return `Only ${ctx.fields.join(', ')} changed in ${ctx.collection}`;
-	return `${verb(ctx.action)} in ${ctx.collection}, rule says don't clear`;
+	return `${verb(ctx.action)} in ${ctx.collection} (rule: don't clear on ${ctx.action})`;
 }
 
 /** Was one of the answer's collections cleared after its request began? Then the answer may be older than the change. */
@@ -835,7 +835,7 @@ export async function applyRules(config: RulesConfig, origin: 'startup' | 'save'
 	const wasTargeted = rt.config.targeted;
 	rt.config = targetedPossible(rt) ? config : { ...config, targeted: false };
 	if (rt.config.targeted && (!wasTargeted || origin === 'startup') && rt.cache && rt.originals) {
-		await fullClear(rt, rt.cache, { collection: null, action: null, reason: origin === 'startup' ? 'Directus started in Granular mode: start with an empty cache' : 'Switched to Granular: start with an empty cache' });
+		await fullClear(rt, rt.cache, { collection: null, action: null, reason: origin === 'startup' ? 'Directus started in Granular mode' : 'Switched to Granular mode' });
 	}
 	if (!rt.config.targeted) {
 		rt.index.clear();
@@ -873,7 +873,7 @@ function toBool(value: unknown): boolean {
 
 /** Shown on the pages (joined with other problems, so no final period). */
 export const RESTART_PROBLEM =
-	"Restart Directus once to activate Granular Cache. Until then, a change clears the whole cache, not just its collection. Lifetimes per collection don't apply yet. Rules that keep the cache already work";
+	"Restart Directus once to activate Granular Cache. Until then, every change clears the whole cache and lifetimes per collection don't apply. Rules that keep the cache already work";
 
 /** `env`: the settings object of the caller (the endpoint), so the values match the Status page. */
 export function runtimeStatus(env: Record<string, unknown> = runtime().env): RuntimeStatus {

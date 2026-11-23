@@ -532,7 +532,7 @@ test('ttl vs purge: warn only when the cache is emptied much sooner than the lif
 	assert.equal(intervalText(3 * 24 * 60), 'about every 3 days');
 
 	// Size hint only when clears are frequent (every 5 minutes or more often), and worded as "likely".
-	assert.match(sizeVsClearsText(4.3 * 1024 * 1024, 900, since, now) ?? '', /about 56 times per hour, so it likely never gets the chance to grow: 4.3 MB now/);
+	assert.match(sizeVsClearsText(4.3 * 1024 * 1024, 900, since, now) ?? '', /about 56 times per hour, so it can't grow: 4.3 MB now/);
 	assert.equal(sizeVsClearsText(50 * 1024 * 1024, 7932, since, now), null);
 	assert.equal(sizeVsClearsText(4_000_000, 50, since, now), null, '50 clears in 16 hours is not constant');
 	assert.equal(sizeVsClearsText(4_000_000, 10, since, now), null);

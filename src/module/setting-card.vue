@@ -48,7 +48,7 @@
 						<span class="tag tag-muted">From configuration</span>
 					</template>
 					<template v-else>
-						<span class="tag">
+						<span v-tooltip="inUseSource" class="tag tag-in-use">
 							<span class="tag-label">In use</span>
 							<span class="tag-value">{{ summary(effective) }}</span>
 						</span>
@@ -56,7 +56,8 @@
 							<span class="tag-label">Configured</span>
 							<span class="tag-value">{{ summary(configured) }}</span>
 						</span>
-						<span v-if="override !== null && override !== undefined" class="tag">
+						<!-- Normally the saved value is the one in use; shown only while they differ (e.g. another server not synced yet). -->
+						<span v-if="hasOverride && summary(override) !== summary(effective)" class="tag">
 							<span class="tag-label">Saved here</span>
 							<span class="tag-value">{{ summary(override) }}</span>
 						</span>
@@ -116,6 +117,9 @@ const hiddenNames = computed(() =>
 function addedTooltip(name: string): string {
 	return `Added here, not in the configuration. To keep it long term, add "${name}" to ${props.env} in your Directus configuration.`;
 }
+
+const hasOverride = computed(() => props.override !== null && props.override !== undefined);
+const inUseSource = computed(() => (hasOverride.value ? 'Saved here' : 'From the Directus configuration'));
 
 function summary(value: Value | null | undefined): string {
 	if (Array.isArray(value)) return String(value.length);
@@ -243,6 +247,16 @@ function summary(value: Value | null | undefined): string {
 .tag-value {
 	font-weight: 700;
 	font-variant-numeric: tabular-nums;
+}
+.tag-in-use {
+	color: var(--theme--primary, var(--primary));
+	border-color: var(--theme--primary-subdued, var(--primary-alt));
+	background: var(--theme--primary-background, var(--primary-alt));
+	cursor: help;
+}
+.tag-in-use .tag-label {
+	color: inherit;
+	opacity: 0.8;
 }
 .tag-muted {
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));

@@ -23,44 +23,33 @@
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="Counting" :close="false">
 				<p class="sidebar-text">
-					Directus keeps a copy of its responses, the cache, so it does not have to ask the database every time.
+					This page counts the minutes in which a change cleared the whole cache. Several changes in one minute count once.
+					Collections with a rule that never clears, or on the ignore list, don't count.
 				</p>
-				<p class="sidebar-text">
-					A change clears the whole cache, unless the collection's rule never clears or it is on the ignore list in the
-					Directus configuration. This page counts in how many minutes that happened at least once. Several changes in
-					the same minute count as one.
-				</p>
-				<p class="sidebar-text">
-					The numbers come from the activity log. Changes that are not logged there can't be counted, but they still clear
-					the cache:
-				</p>
+				<p class="sidebar-text">The numbers come from the activity log. These changes aren't logged, but still clear the cache:</p>
 				<ul class="sidebar-list">
-					<li>
-						collections with "Activity &amp; Revision Tracking" turned off. They are listed as "Not measured" at the end of
-						the table;
-					</li>
-					<li>changes made by Flows that run without activity tracking. These can't be detected.</li>
+					<li>collections with "Activity &amp; Revision Tracking" turned off, listed as "Not measured" at the end of the table;</li>
+					<li>Flows that run without activity tracking.</li>
 				</ul>
 				<p class="sidebar-text">
-					If Directus deletes old activity (retention), a long time period shows less than actually happened. The page
-					warns you when that is the case.
+					If Directus deletes old activity (retention), long periods show less than really happened. The page warns you then.
 				</p>
 				<p class="sidebar-text">
-					Rules that keep only some changes (one action off, Skip Fields) are counted as clearing: the activity log does
-					not show which fields changed.
+					Rules that keep only some changes (an action off, Skip Fields) count as clearing, because the activity log doesn't
+					show which fields changed.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="strategy" icon="lightbulb" title="What Never to Clear">
 				<p class="sidebar-text">
-					Good choices change very often, and nobody needs them up to date to the second: counters, logs, statistics.
+					Good candidates change very often and don't need to be up to date to the second: counters, logs, statistics.
 				</p>
 				<p class="sidebar-text">
-					Keep clearing for collections that decide what users may see or buy, like subscriptions, purchases or access
-					rights. Only stop it if the apps that read them ask for fresh data.
+					Keep clearing collections that decide what users may see or buy, like subscriptions, purchases or access rights,
+					unless the apps that read them send <code>Cache-Control: no-store</code>.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="recommendations" icon="recommend" title="Suggestions">
-				<p class="sidebar-text">A collection is suggested for a rule that never clears when it</p>
+				<p class="sidebar-text">A collection is suggested when it</p>
 				<ul class="sidebar-list">
 					<li>changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }} times per hour,</li>
 					<li>is not a Directus system collection,</li>
@@ -92,9 +81,8 @@
 				Clear Rate
 			</v-divider>
 			<p class="explain intro">
-				How often changes cleared the whole cache in the chosen period, and what rules that never clear would change.
-				Collections whose rule never clears, and those on the ignore list in the Directus configuration, keep the cache.
-				Cached responses expire {{ ttlText }} if nothing clears them sooner.
+				How often changes cleared the whole cache in the chosen period. Collections with a rule that never clears, or on
+				the ignore list, don't count. Cached responses expire {{ ttlText }} if nothing clears them sooner.
 			</p>
 
 			<div v-if="!analysis && loadingAnalysis" class="loading"><v-progress-circular indeterminate /></div>
@@ -110,9 +98,9 @@
 				</v-notice>
 				<v-notice v-if="granular" type="info" class="notice">
 					<span>
-						Granular mode is on: a change only clears the cached responses that use its collection. The numbers below show how
-						often the whole cache would be cleared without it. For collections that change often, Skip Fields or a
-						lifetime on <router-link to="/cache-manager/cache">Granular Cache</router-link> may be enough.
+						Granular mode is on, so a change clears only the responses that use its collection. The numbers below are the
+						whole-cache clears of Global mode. For busy collections, Skip Fields or a lifetime on
+						<router-link to="/cache-manager/cache">Granular Cache</router-link> is usually enough.
 					</span>
 				</v-notice>
 
@@ -165,9 +153,8 @@
 						Suggestions
 					</v-divider>
 					<p class="explain intro">
-						Collections that change so often that they clear the cache a lot. Applying adds a rule that never clears;
-						you can refine it on <router-link to="/cache-manager/cache">Granular Cache</router-link>, for example with Skip
-						Fields.
+						These collections change often and clear the cache a lot. Apply adds a rule that never clears. Refine it on
+						<router-link to="/cache-manager/cache">Granular Cache</router-link>, for example with Skip Fields.
 					</p>
 				</template>
 				<div v-if="analysis.recommendedList.length" class="suggest-row">
@@ -192,7 +179,7 @@
 							{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}/h
 						</span>
 						<span v-if="sensitiveRecommendations.length" class="warning-text">
-							Check impact: the name suggests apps may rely on it being up to date (access, payments, purchases).
+							Check first: apps may need this data up to date (access, payments, purchases).
 						</span>
 					</div>
 					<v-button
@@ -300,12 +287,10 @@
 
 				<p class="meta">
 					{{ new Date(analysis.from).toLocaleString() }} to {{ new Date(analysis.to).toLocaleString() }}.
-					"Changed in" counts the minutes with at least one change, and how many that is per hour. "If never cleared" shows
-					how many times per hour less the cache would be cleared if that collection's rule never cleared. A bigger drop
-					is better.
+					"Changed in": minutes with at least one change, and the rate per hour. "If never cleared": how many fewer
+					clears per hour a never-clear rule for that collection gives. Bigger is better.
 					<template v-if="!analysis.editorHeuristic">
-						The public address of Directus is not a full URL, so changes by editors can't be told apart from changes by
-						apps.
+						PUBLIC_URL is not a full URL, so changes by editors can't be told apart from changes by apps.
 					</template>
 				</p>
 			</template>
@@ -454,7 +439,7 @@ watch(analysis, () => {
 	selected.value = [];
 });
 
-const notMeasuredTooltip = "Activity tracking is off for this collection, so its changes can't be counted. They can still clear the cache.";
+const notMeasuredTooltip = "Activity tracking is off, so its changes can't be counted. They still clear the cache.";
 
 const addableRecommendations = computed(() => (analysis.value?.recommendedList ?? []).filter((name) => !draftKept.value.has(name)));
 
@@ -467,22 +452,22 @@ const suggestionRate = computed(() => {
 const clearsTooltip = computed(() => {
 	const current = analysis.value;
 	if (!current) return '';
-	return `${formatTimes(current.purgeMinutes, current.windowMinutes)}. Lower is better: after clearing, Directus has to load everything from the database again.`;
+	return `${formatTimes(current.purgeMinutes, current.windowMinutes)}. Lower is better: after a clear, everything is loaded from the database again.`;
 });
 
 const changesTooltip = computed(() => {
 	const current = analysis.value;
 	if (!current) return '';
 	if (!keptDirty.value) return 'Select collections in the table and click Never clear selected to see the effect here.';
-	return `With your changes the cache would have been cleared ${formatTimes(whatIf.value, current.windowMinutes)}. Lower is better.`;
+	return `With your changes: ${formatTimes(whatIf.value, current.windowMinutes)}. Lower is better.`;
 });
 
 const suggestionRateTooltip = computed(() => {
 	const current = analysis.value;
 	if (!current) return '';
-	if (!current.recommendedList.length) return 'No collection changes often enough to matter.';
+	if (!current.recommendedList.length) return 'No collection changes often enough.';
 	const ttl = state.value?.effective.ttl ? formatDurationLabel(state.value.effective.ttl) : 'the cache lifetime';
-	return `Would have been cleared ${formatTimes(current.recommendedPurgeMinutes, current.windowMinutes)}. Collections that never clear can be up to ${ttl} old.`;
+	return `With the suggestions: ${formatTimes(current.recommendedPurgeMinutes, current.windowMinutes)}. Collections that never clear can be up to ${ttl} old.`;
 });
 
 const saveText = computed(() => (rulesDirty.value ? 'Save & Apply' : 'No unsaved changes'));
@@ -528,7 +513,7 @@ const skipCacheNotice = computed(() => {
 	if (!state.value || state.value.effective.skipAllowed) return null;
 	const neverClear = rulesData.value ? neverClearCollections(rulesData.value.config) : [];
 	if (!(analysis.value?.recommendedList.length) && !neverClear.length) return null;
-	return 'A collection that never clears can serve stale data until the cache lifetime. Apps that need a fresh response must send Cache-Control: no-store. Skip Cache is off.';
+	return 'Skip Cache is off. Apps get data from collections that never clear only when their cached responses expire.';
 });
 
 onMounted(async () => {

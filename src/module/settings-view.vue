@@ -11,8 +11,7 @@
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="About">
 				<p class="sidebar-text">
-					Check for a new version, back up or restore what you saved in Cache Manager, or remove its settings field
-					before uninstalling.
+					Check for updates, export or import your Cache Manager settings, or remove them before uninstalling.
 				</p>
 			</sidebar-detail>
 		</template>
@@ -28,7 +27,7 @@
 				Extension Updates
 			</v-divider>
 			<p class="explain">
-				Check npm for the latest published version and compare it with the installed extension version.
+				Compare the installed version with the latest version on npm.
 			</p>
 			<div class="actions">
 				<v-button secondary :loading="checkingUpdates" @click="checkUpdates">Check now</v-button>
@@ -58,8 +57,8 @@
 				Export / Import
 			</v-divider>
 			<p class="explain">
-				Back up what you saved in Cache Manager as a JSON file, or restore it, for example in another project. An import
-				is checked like Save &amp; Apply and is used right away. Unsaved changes on the other pages are replaced.
+				Save your Cache Manager settings as a JSON file, or import them, for example into another project. An import
+				applies right away and replaces unsaved changes on the other pages.
 			</p>
 
 			<div class="actions">
@@ -83,13 +82,13 @@
 			</v-divider>
 
 			<p class="explain">
-				What you save in Cache Manager lives in <code>directus_settings.{{ SETTINGS_FIELD }}</code>. Cleanup uses the
-				configured values again right away and removes only that field. If the extension stays installed, the next
-				Directus restart recreates an empty field.
+				Cache Manager stores its settings in <code>directus_settings.{{ SETTINGS_FIELD }}</code>. Removing them switches
+				back to the configured values right away and deletes only that field. If the extension stays installed, Directus
+				creates an empty field again on the next restart.
 			</p>
 
 			<v-notice type="warning" class="notice">
-				Deleting extension data cannot be undone. Export first if you might need the settings again.
+				This can't be undone. Export first if you may need the settings again.
 			</v-notice>
 
 			<div v-if="result" class="result">

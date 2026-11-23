@@ -14,49 +14,36 @@
 
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="About" :close="false">
+				<p class="sidebar-text">Directus keeps its API responses in a cache, so it doesn't query the database every time.</p>
 				<p class="sidebar-text">
-					Directus keeps a copy of its responses, the cache, so it does not have to ask the database every time.
+					<strong>Configured</strong> is what Directus started with, from its .env file, config file or environment variables.
 				</p>
-				<p class="sidebar-text">
-					<strong>Configured</strong> shows the values Directus started with. They come from its configuration: an .env
-					file, a config file or environment variables.
-				</p>
-				<p class="sidebar-text">
-					What you save here is used right away, without a restart. It stays after a restart until you reset it.
-				</p>
-				<p class="sidebar-text">If Directus runs on several servers, the others use what you saved within about 10 seconds.</p>
+				<p class="sidebar-text">What you save here applies right away and stays after a restart, until you reset it.</p>
+				<p class="sidebar-text">With several Directus servers, the others pick it up within 10 seconds.</p>
 			</sidebar-detail>
 			<sidebar-detail id="auto-purge" icon="delete_sweep" title="Auto Purge">
 				<p class="sidebar-text">
-					<strong>On:</strong> a change clears the whole cache, unless the collection is ignored or its rule never clears. Everyone sees the
-					change right away.
+					<strong>On:</strong> changes clear the cache, so everyone sees them right away. Granular Cache decides how much a
+					change clears.
 				</p>
-				<p class="sidebar-text">
-					<strong>Off:</strong> changes only show up when the cached copy expires (see Cache Lifetime). Editors may wait that long to see their changes.
-				</p>
+				<p class="sidebar-text"><strong>Off:</strong> changes show up only when cached responses expire (Cache Lifetime).</p>
 				<p class="sidebar-text"><strong>Recommended:</strong> on.</p>
 			</sidebar-detail>
 			<sidebar-detail id="skip-allowed" icon="bolt" title="Skip Cache">
 				<p class="sidebar-text">
-					<strong>On:</strong> an app can ask for fresh data. It sends the header <code>Cache-Control: no-store</code>.
+					<strong>On:</strong> an app gets a fresh response when it sends the header <code>Cache-Control: no-store</code>.
 				</p>
-				<p class="sidebar-text">Apps need this to read collections up to date that don't clear the cache.</p>
-				<p class="sidebar-text"><strong>Recommended:</strong> on, if your Directus is not open to the public.</p>
+				<p class="sidebar-text">Apps need this for collections whose changes don't clear the cache.</p>
+				<p class="sidebar-text"><strong>Recommended:</strong> on, unless your Directus is open to the public.</p>
 			</sidebar-detail>
 			<sidebar-detail id="ttl" icon="schedule" title="Cache Lifetime">
 				<p class="sidebar-text">
-					Write a duration like 5m (minutes), 1h (hours) or 1d (days). At most 30 days. A number with no unit is
-					milliseconds (2 means 2 ms, not 2 hours).
+					Write a duration like 5m, 1h or 1d, at most 30 days. A number without a unit is milliseconds: 2 means 2 ms, not
+					2 hours.
 				</p>
-				<p class="sidebar-text">
-					Shorter means fresher data, but Directus asks the database more often. Longer means less work for the
-					database, but data that is not cleared can be older.
-				</p>
-				<p class="sidebar-text">
-					A new value applies to new entries right away. Entries already in the cache keep their old lifetime until they
-					expire or the cache is cleared.
-				</p>
-				<p class="sidebar-text"><strong>Recommended:</strong> between 5 minutes and a few hours.</p>
+				<p class="sidebar-text">Shorter: fresher data, more database queries. Longer: fewer queries, older data where nothing clears it.</p>
+				<p class="sidebar-text">A new value applies to newly cached responses. Responses already cached keep their old lifetime.</p>
+				<p class="sidebar-text"><strong>Recommended:</strong> 5 minutes to a few hours.</p>
 			</sidebar-detail>
 		</template>
 
@@ -68,15 +55,14 @@
 
 			<template v-if="state">
 				<v-notice v-if="!state.env.CACHE_ENABLED" type="warning" class="notice">
-					The cache is turned off in the configuration, so these settings have no effect right now.
+					The cache is off in the Directus configuration (CACHE_ENABLED), so these settings do nothing right now.
 				</v-notice>
 				<v-notice v-if="!state.inSync" type="warning" class="notice">
-					The settings in use differ from what is configured and saved here. Save again or restart Directus.
+					The settings in use don't match what is saved here. Save again or restart Directus.
 				</v-notice>
 				<v-notice v-if="state.env.CACHE_ENABLED && !state.effective.autoPurge" type="info" class="notice">
-					Auto Purge is off, so changes only show up when cached responses expire. To keep almost all of the cache and
-					still show changes right away, turn on Auto Purge and choose Granular in Granular Cache: a change then clears
-					only the cached responses that use the changed collection.
+					Auto Purge is off, so changes show up only when cached responses expire. Turn on Auto Purge and choose Granular on
+					Granular Cache: changes then show up right away, and most of the cache stays.
 				</v-notice>
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
@@ -84,7 +70,7 @@
 					Current Settings
 				</v-divider>
 				<p class="explain">
-					The cache settings Directus uses right now. What you save here applies at once, without a restart.
+					The cache settings in use right now. Saving applies them right away, without a restart.
 				</p>
 
 				<div class="cards">
@@ -106,7 +92,7 @@
 					</setting-card>
 					<setting-card
 						title="Skip Cache"
-						description="Let apps request a fresh response for one request."
+						description="Let apps ask for a fresh response."
 						:hint="SKIP_CACHE_HINT"
 						env="CACHE_SKIP_ALLOWED"
 						:effective="onOff(state.effective.skipAllowed)"
@@ -119,8 +105,8 @@
 					</setting-card>
 					<setting-card
 						title="Cache Lifetime"
-						description="How long cached responses stay if nothing clears them first."
-						hint="Applies to new entries right away. Entries already in the cache keep their old lifetime until they expire or the cache is cleared. Auto Purge often empties the cache sooner. Analysis shows how often."
+						description="How long a response stays cached if no change clears it."
+						hint="Applies to newly cached responses. Auto Purge often clears them sooner. Analysis shows how often."
 						env="CACHE_TTL"
 						:effective="formatDurationShort(state.effective.ttl)"
 						:configured="formatDurationShort(state.baseline.ttl)"
@@ -145,8 +131,8 @@
 					</setting-card>
 					<setting-card
 						title="Cache Store"
-						description="Where the cache is kept. Statistics shows how much it holds and how often it is emptied."
-						hint="A small size after many whole-cache clears usually means the cache is rebuilt constantly, not that the site is small."
+						description="Where the cache is kept. Statistics shows its size and how often it is cleared."
+						hint="A small size after many global cache clears means the cache is rebuilt all the time, not that the site is small."
 						env="CACHE_STORE"
 						:effective="String(state.env.CACHE_STORE ?? '–')"
 						readonly
@@ -158,7 +144,7 @@
 					<div class="wide">
 						<setting-card
 							title="Ignored Collections"
-							description="Changes to these collections don't clear the cache. To keep more collections, add a rule that never clears."
+							description="Changes to these collections never clear the cache. For other collections, add a rule on Granular Cache."
 							env="CACHE_AUTO_PURGE_IGNORE_LIST"
 							:effective="state.effective.ignoreList"
 							readonly
@@ -199,11 +185,11 @@ const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, 
 
 /** (i) text of Skip Cache; the tooltip shows the line breaks. */
 const SKIP_CACHE_HINT = [
-	'An app asks for a fresh response by sending the header Cache-Control: no-store. Directus then skips the cache for that request.',
+	'An app gets a fresh response when it sends the header Cache-Control: no-store. Directus then skips the cache for that request.',
 	'',
 	"Example: fetch('/items/subscriptions', { headers: { 'Cache-Control': 'no-store' } })",
 	'',
-	"Apps need it for collections that don't clear the cache. Turn it on unless this Directus is open to the public.",
+	"Apps need this for collections whose changes don't clear the cache. Turn it on unless your Directus is open to the public.",
 ].join('\n');
 
 function onOff(value: boolean) {

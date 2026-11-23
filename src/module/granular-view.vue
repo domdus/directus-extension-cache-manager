@@ -23,36 +23,34 @@
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="How It Works" :close="false">
 				<p class="sidebar-text">
-					With Auto Purge on, Directus clears its <strong>whole</strong> cache on every change, even when a visit is counted.
-					Pages and videos that did not change have to be loaded from the database again.
+					With Auto Purge on, Directus clears the <strong>whole</strong> cache on every change, even for a counted visit.
+					Everything then has to be loaded from the database again.
 				</p>
 				<p class="sidebar-text">
-					<strong>Granular</strong> remembers which collections each cached response uses. A change then
-					clears only the cached responses that use the changed collection, including cached responses that reach it through relations.
+					<strong>Granular</strong> remembers which collections each cached response uses, including through relations. A
+					change clears only the responses that use the changed collection.
 				</p>
 				<p class="sidebar-text">
 					Changes to users, roles, permissions, policies, settings or the data model still clear everything, because they
-					can change any cached response.
+					can affect any response.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="rules" icon="rule" title="Rules">
 				<p class="sidebar-text">
-					<strong>Create, Update, Delete</strong>: which changes clear the cache. Turn off "Update" for collections where only new or
-					deleted items matter.
+					<strong>Create, Update, Delete</strong>: which changes clear the cache. Turn off Update where only new or deleted
+					items matter.
 				</p>
 				<p class="sidebar-text">
-					<strong>Skip Fields</strong>: changes that only touch these fields keep the cache, for example a view
-					counter. A change to any other field still clears.
+					<strong>Skip Fields</strong>: a change to only these fields keeps the cache, for example a view counter. Changes
+					to other fields still clear.
 				</p>
 				<p class="sidebar-text">
-					<strong>Lifetime</strong>: how long cached responses that use this collection stay in the cache. Write 5m, 1h or 1d —
-					a number with no unit is milliseconds. A cached response that uses several collections gets the shortest of their
-					times; collections without their own time count with the global one
+					<strong>Lifetime</strong>: how long responses that use this collection stay cached. Write 5m, 1h or 1d; a number
+					without a unit is milliseconds. A response that uses several collections gets the shortest lifetime. Collections
+					without a lifetime use the global one
 					({{ data?.globalTtl ? formatDurationLabel(data.globalTtl) : 'CACHE_TTL' }}).
 				</p>
-				<p class="sidebar-text">
-					Apps that need data up to date right away can always ask for it with <code>Cache-Control: no-store</code>.
-				</p>
+				<p class="sidebar-text">Apps that need fresh data can always send <code>Cache-Control: no-store</code>.</p>
 			</sidebar-detail>
 		</template>
 
@@ -72,12 +70,12 @@
 					Restart Directus once so lifetimes per collection apply.
 				</v-notice>
 				<v-notice v-else-if="!data.status.autoPurge" type="info" class="notice">
-					Auto Purge is off on the <router-link to="/cache-manager">Status</router-link> page, so changes don't clear
-					anything. Only the lifetimes apply.
+					Auto Purge is off on <router-link to="/cache-manager">Status</router-link>, so changes clear nothing. Only
+					lifetimes apply.
 				</v-notice>
 				<v-notice v-if="data.status.store !== 'memory' && !data.status.shared && draft.targeted" type="warning" class="notice">
-					The cache is kept in {{ data.status.store }}, but Cache Manager can't use it to share its notes. Granular mode works
-					with one Directus process here. With several, use Whole Cache.
+					The cache is kept in {{ data.status.store }}, which Cache Manager can't share between servers. Granular works here
+					with a single Directus server only. With several, use Global.
 				</v-notice>
 
 				<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
@@ -90,8 +88,8 @@
 					<button type="button" class="option" :class="{ active: !draft.targeted }" @click="draft.targeted = false">
 						<v-icon :name="!draft.targeted ? 'radio_button_checked' : 'radio_button_unchecked'" />
 						<span class="option-text">
-							<strong>Whole Cache</strong>
-							<span class="subdued">How Directus does it. Every change clears every cached response.</span>
+							<strong>Global</strong>
+							<span class="subdued">The Directus default. Every change clears the whole cache.</span>
 						</span>
 					</button>
 					<button type="button" class="option" :class="{ active: draft.targeted }" @click="draft.targeted = true">
@@ -108,9 +106,9 @@
 				<div v-if="draft.targeted" class="advanced">
 					<v-checkbox v-model="draft.items" label="Clear single items (advanced)" />
 					<p class="explain">
-						A change to some items also keeps the single-item responses of the other items, such as
-						<code>/items/pages/5</code> and GraphQL <code>pages_by_id</code>. Lists still clear. Helps when one collection
-						is read item by item and its items change often, such as stock or prices.
+						A change to an item keeps the cached responses of all other items of that collection, such as
+						<code>/items/pages/5</code> or GraphQL <code>pages_by_id</code>. Lists of the collection still clear. Helps when
+						a collection is read item by item and its items change often, such as stock or prices.
 					</p>
 				</div>
 
@@ -122,7 +120,15 @@
 					<template #icon><v-icon name="rule" /></template>
 					Rules
 				</v-divider>
-				<p class="explain">Change what a collection's changes clear, and how long its responses stay cached.</p>
+				<p class="explain">
+					<template v-if="draft.targeted">
+						Optional. Granular mode already keeps everything a change doesn't use. A rule fine-tunes one collection: which of its
+						changes clear and how long its responses stay cached.
+					</template>
+					<template v-else>
+						Optional. A rule keeps the cache when a busy collection changes, or sets how long its responses stay cached.
+					</template>
+				</p>
 
 				<div class="toolbar">
 					<v-notice type="info" class="toolbar-notice">
@@ -148,8 +154,8 @@
 								<th class="center">Create</th>
 								<th class="center">Update</th>
 								<th class="center">Delete</th>
-								<th class="fields-col" v-tooltip="'Changes that only touch these fields keep the cache'">Skip Fields</th>
-								<th class="ttl-col" v-tooltip="'How long responses that use this collection stay cached. Write 5m, 1h or 1d — a number with no unit is milliseconds.'">Lifetime</th>
+								<th class="fields-col" v-tooltip="'A change to only these fields keeps the cache'">Skip Fields</th>
+								<th class="ttl-col" v-tooltip="'How long responses that use this collection stay cached. Write 5m, 1h or 1d; a number without a unit is milliseconds.'">Lifetime</th>
 								<th class="action-col" />
 							</tr>
 						</thead>
@@ -234,7 +240,7 @@ const ruleNames = computed(() => Object.keys(draft.collections).sort());
 
 /**
  * Without a restart, the first problem is the restart notice (status.installed is false). It is about Granular mode,
- * so it only shows while Granular is selected; in Whole Cache mode only lifetimes per collection need the restart.
+ * so it only shows while Granular is selected; in Global mode only lifetimes per collection need the restart.
  */
 const restartNeeded = computed(() => !!data.value && !data.value.status.installed);
 const otherProblems = computed(() => (data.value?.status.problems ?? []).slice(restartNeeded.value ? 1 : 0));
@@ -259,7 +265,7 @@ const addChoices = computed(() =>
 		.map((entry) => ({ text: entry.name, value: entry.name })),
 );
 const saveText = computed(() => {
-	if (invalidTtl.value.length) return `Save & Apply · Check the time for ${invalidTtl.value.join(', ')}`;
+	if (invalidTtl.value.length) return `Save & Apply · Fix the lifetime of ${invalidTtl.value.join(', ')}`;
 	return dirty.value ? 'Save & Apply · Unsaved changes' : 'Save & Apply';
 });
 

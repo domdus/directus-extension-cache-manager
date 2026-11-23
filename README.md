@@ -45,7 +45,7 @@ Then enable **Cache Manager** in **Settings → Project Settings → Modules**.
 
 <img alt="Cache Manager — Granular Cache" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/granular-cache.png" width="800" />
 
-- **Whole Cache**: how Directus does it. Every change clears every cached response.
+- **Global**: how Directus does it. Every change clears every cached response.
 - **Granular**: a change clears only the cached responses that use the changed collection. For example:
   - A new visit clears cached responses that show visits. Pages and videos stay cached.
   - A renamed service also clears the page list that shows service names.
@@ -84,7 +84,7 @@ Collections with activity tracking turned off (**Not measured**) and some Flows 
 
 <img alt="Cache Manager — Statistics" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/statistics.png" width="800" />
 
-What happened since Directus started: whole-cache clears, granular clears, changes a rule kept, and the latest events with their reason. With the cache in memory, also the cache size, the largest collections and charts for the last 24 hours. The numbers reset when Directus restarts.
+What happened since Directus started: global cache clears, granular clears, changes a rule kept, and the latest events with their reason. With the cache in memory, also the cache size, the largest collections and charts for the last 24 hours. The numbers reset when Directus restarts.
 
 ## Settings on Status
 

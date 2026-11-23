@@ -16,26 +16,18 @@
 
 		<template #sidebar>
 			<sidebar-detail id="about" icon="info" title="About" :close="false">
+				<p class="sidebar-text">Every change that cleared the cache on this Directus server, and what it removed. The page refreshes every 15 seconds.</p>
 				<p class="sidebar-text">
-					What actually happened in this Directus process: every time a change asked Directus to clear the cache, and
-					what was cleared. The page refreshes every 15 seconds.
+					Directus doesn't count cache hits. This page shows how often the cache is cleared, how big it is, and how many
+					changes kept the rest of the cache.
 				</p>
 				<p class="sidebar-text">
-					<strong>Cache Size</strong> counts the memory store directly. Directus keeps an expired cached response until someone
-					asks for it again, so cached responses nobody asks for again would stay in memory. The extension deletes them every
-					minute. With Redis, Redis removes them itself.
+					Directus keeps an expired response until someone requests it again. Cache Manager deletes expired responses every
+					minute. Redis does this itself.
 				</p>
+				<p class="sidebar-text">The numbers reset when Directus restarts. With several servers, each server counts its own.</p>
 				<p class="sidebar-text">
-					The numbers live in memory. They start at zero when Directus restarts. With several Directus servers, each counts its own.
-				</p>
-				<p class="sidebar-text">
-					Directus does not report cache hits and misses. What this page can show is how often the cache is emptied, how
-					much stays in memory, and what share of changes left other cached responses in place (Granular Cache and never-clear
-					rules).
-				</p>
-				<p class="sidebar-text">
-					The <router-link to="/cache-manager/analysis">Analysis</router-link> page looks back further: it counts changes in
-					the activity log.
+					For a longer period, see <router-link to="/cache-manager/analysis">Analysis</router-link>. It reads the activity log.
 				</p>
 			</sidebar-detail>
 		</template>
@@ -52,7 +44,7 @@
 					<template #icon><v-icon name="history" /></template>
 					Cache Clears
 				</v-divider>
-				<p class="explain intro">What changes did since Directus started ({{ new Date(data.status.since).toLocaleString() }}).</p>
+				<p class="explain intro">What cleared the cache since Directus started ({{ new Date(data.status.since).toLocaleString() }}).</p>
 				<v-notice v-if="sizeVsClears" type="warning" class="notice">
 					<span>
 						{{ sizeVsClears }}
@@ -64,9 +56,9 @@
 					<div class="stat">
 						<span class="stat-value">{{ times(data.status.counts.full) }}</span>
 						<span class="stat-label">
-							Whole Cache
+							Global Cache
 							<v-icon
-								v-tooltip.top="'Changes that cleared every cached response. In Granular mode only changes that can affect every cached response do this (users, roles, permissions, settings, data model), plus a manual clear and switching to Granular.'"
+								v-tooltip.top="'Changes that cleared the whole cache. In Granular mode, only changes to users, roles, permissions, settings or the data model do this, plus switching to Granular and manual clears.'"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -78,7 +70,7 @@
 						<span class="stat-label">
 							Granular
 							<v-icon
-								v-tooltip.top="`${formatNumber(data.status.counts.removed)} ${data.status.counts.removed === 1 ? 'cached response' : 'cached responses'} cleared in total.`"
+								v-tooltip.top="`${formatNumber(data.status.counts.removed)} ${data.status.counts.removed === 1 ? 'cached response' : 'cached responses'} removed in total.`"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -90,7 +82,7 @@
 						<span class="stat-label">
 							Kept by Rule
 							<v-icon
-								v-tooltip.top="'Changes that did not clear anything because of a rule.'"
+								v-tooltip.top="'Changes that cleared nothing because of a rule.'"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -102,7 +94,7 @@
 						<span class="stat-label">
 							Emptied
 							<v-icon
-								v-tooltip.top="'Average time between whole-cache clears since Directus started, counted in minutes like Analysis: several clears in the same minute count once. If it is much shorter than the Cache Lifetime, cached responses almost never live as long as the lifetime allows.'"
+								v-tooltip.top="'Average time between global cache clears. Several clears in one minute count once. If this is much shorter than the Cache Lifetime, cached responses rarely reach their lifetime.'"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -113,7 +105,7 @@
 				<p v-if="data.status.targetedActive" class="meta">
 					<template v-if="data.status.indexed >= 0">{{ formatNumber(data.status.indexed) }} cached responses right now.</template>
 					<template v-else>Shared by all Directus servers through Redis.</template>
-					<template v-if="topCollections.length">{{ ' ' }}Most used: {{ topCollections.join(', ') }}.</template>
+					<template v-if="topCollections.length">{{ ' ' }}Most cached: {{ topCollections.join(', ') }}.</template>
 				</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
@@ -121,14 +113,14 @@
 					Cache Size
 				</v-divider>
 				<template v-if="data.status.size">
-					<p class="explain intro">How much the cache holds in the memory of this Directus process right now.</p>
+					<p class="explain intro">Memory the cache uses on this server right now.</p>
 					<section class="summary-bar" aria-label="Cache size">
 						<div class="stat">
 							<span class="stat-value">{{ formatBytes(data.status.size.bytes) }}</span>
 							<span class="stat-label">
 								Size
 								<v-icon
-									v-tooltip.top="`${formatNumber(data.status.size.entries)} ${data.status.size.entries === 1 ? 'entry' : 'entries'}. About the size of the stored data; Node.js needs some more memory around it. A few megabytes after many whole-cache clears usually means the cache is rebuilt constantly.`"
+									v-tooltip.top="`${formatNumber(data.status.size.entries)} ${data.status.size.entries === 1 ? 'entry' : 'entries'}. Node.js needs a little more memory on top. A small cache after many global cache clears means it is rebuilt all the time.`"
 									name="help_outline"
 									small
 									class="stat-info"
@@ -140,7 +132,7 @@
 							<span class="stat-label">
 								Peak Size
 								<v-icon
-									v-tooltip.top="'Largest size measured in the last 24 hours (since Directus started, if that is shorter). If it stays close to the current size while the cache is emptied often, the cache never gets the chance to grow.'"
+									v-tooltip.top="'Largest size in the last 24 hours. If it stays close to the current size while the cache is cleared often, the cache never gets to grow.'"
 									name="help_outline"
 									small
 									class="stat-info"
@@ -152,7 +144,7 @@
 							<span class="stat-label">
 								Freed
 								<v-icon
-									v-tooltip.top="`${formatNumber(data.status.swept.entries)} expired ${data.status.swept.entries === 1 ? 'entry' : 'entries'} deleted since Directus started. Directus itself only deletes an expired entry when someone asks for it again. Cache Manager deletes them within about a minute.`"
+									v-tooltip.top="`${formatNumber(data.status.swept.entries)} expired ${data.status.swept.entries === 1 ? 'entry' : 'entries'} deleted since Directus started. Directus only deletes an expired entry when it is requested again. Cache Manager deletes them every minute.`"
 									name="help_outline"
 									small
 									class="stat-info"
@@ -162,25 +154,25 @@
 					</section>
 					<div v-if="largest.length" class="largest">
 						<span class="label">Largest Collections</span>
-						<p class="explain">Cached responses that use several collections count for each of them.</p>
+						<p class="explain">A response that uses several collections counts for each of them.</p>
 						<div v-for="row in largest" :key="row.name" class="largest-row">
 							<span class="largest-name">{{ row.name }}</span>
 							<span class="largest-bar"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
 							<span class="largest-value">{{ formatBytes(row.bytes) }}</span>
 						</div>
 					</div>
-					<p v-else-if="!data.status.targetedActive" class="meta">The size per collection is measured in Granular mode.</p>
+					<p v-else-if="!data.status.targetedActive" class="meta">Size per collection is shown in Granular mode only.</p>
 				</template>
 				<p v-else class="explain intro">
-					The size can only be measured when the cache is on and kept in memory (CACHE_STORE=memory). This Directus uses
-					{{ data.status.store }}.
+					<template v-if="data.status.store === 'memory'">No size while the cache is off.</template>
+					<template v-else>The size is shown only for a cache in memory (CACHE_STORE=memory). This Directus uses {{ data.status.store }}.</template>
 				</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="bar_chart" /></template>
 					Last 24 Hours
 				</v-divider>
-				<p class="explain intro">Per hour, since Directus started. Hover a bar for the numbers.</p>
+				<p class="explain intro">Per hour. Hover a bar for the numbers.</p>
 				<div class="charts">
 					<hour-bars title="Changes" :columns="clearColumns" :legend="clearLegend" :format="(v) => formatNumber(v)" empty-text="No changes yet." />
 					<hour-bars v-if="data.status.size" title="Cache Size" :columns="sizeColumns" :legend="sizeLegend" :format="formatBytes" empty-text="The cache is empty." />
@@ -190,7 +182,7 @@
 					<template #icon><v-icon name="list" /></template>
 					Recent Events
 				</v-divider>
-				<p class="explain intro">The latest changes that asked Directus to clear the cache, newest first. Identical ones in the same second are shown once, with a count.</p>
+				<p class="explain intro">Newest first. Repeats in the same second are shown once, with a count.</p>
 
 				<div v-if="events.length" class="table-wrap">
 					<table>
@@ -215,8 +207,7 @@
 						</tbody>
 					</table>
 				</div>
-				<p v-else class="empty subdued">Nothing yet. Started {{ new Date(data.status.since).toLocaleString() }}.</p>
-				<p class="meta">Counted in memory since {{ new Date(data.status.since).toLocaleString() }}.</p>
+				<p v-else class="empty subdued">No changes yet.</p>
 			</template>
 		</div>
 	</private-view>
@@ -272,11 +263,11 @@ const COLORS = {
 	size: 'var(--theme--primary, var(--primary))',
 };
 const clearLegend = [
-	{ label: 'Whole cache', color: COLORS.full },
+	{ label: 'Global cache', color: COLORS.full },
 	{ label: 'Granular', color: COLORS.targeted },
 	{ label: 'Kept by rule', color: COLORS.skipped },
 ];
-const sizeLegend = [{ label: 'Largest size in the hour', color: COLORS.size }];
+const sizeLegend = [{ label: 'Largest size per hour', color: COLORS.size }];
 
 function hourLabel(iso: string): string {
 	return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -291,7 +282,7 @@ function hourRange(iso: string): string {
 const clearColumns = computed<BarColumn[]>(() =>
 	(data.value?.status.history ?? []).map((h) => ({
 		label: hourLabel(h.hour),
-		tooltip: `${hourRange(h.hour)}: whole cache ${formatNumber(h.full)}, granular ${formatNumber(h.targeted)}, kept by rule ${formatNumber(h.skipped)}`,
+		tooltip: `${hourRange(h.hour)}: global cache ${formatNumber(h.full)}, granular ${formatNumber(h.targeted)}, kept by rule ${formatNumber(h.skipped)}`,
 		segments: [
 			{ value: h.full, color: COLORS.full },
 			{ value: h.targeted, color: COLORS.targeted },
@@ -327,8 +318,8 @@ function times(count: number): string {
 const events = computed(() => groupEvents(data.value?.status.recent ?? []));
 
 function resultText(event: GroupedEvent): string {
-	if (event.kind === 'full') return 'Whole cache cleared';
-	if (event.kind === 'skipped') return 'Kept (rule)';
+	if (event.kind === 'full') return 'Global cache cleared';
+	if (event.kind === 'skipped') return 'Kept by rule';
 	return `${formatNumber(event.removed)} ${event.removed === 1 ? 'cached response' : 'cached responses'} cleared`;
 }
 

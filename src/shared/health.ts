@@ -19,9 +19,9 @@ export function ttlVsPurgeText(
 	const rate = formatTimesPerHour(purgeMinutes, windowMinutes);
 	const lifetime = formatDurationLabel(ttl);
 	if (options?.granular) {
-		return `Lifetime is ${lifetime}. In Granular mode, cached responses a change does not touch can live that long. Without it, changes would empty the whole cache about ${rate} times per hour.`;
+		return `Cached responses can last the full ${lifetime}. Without Granular mode, changes clear the whole cache about ${rate} times per hour.`;
 	}
-	return `Lifetime is ${lifetime}, but changes empty the cache about ${rate} times per hour. Cached responses almost never live that long.`;
+	return `Cache Lifetime is ${lifetime}, but changes clear the whole cache about ${rate} times per hour. Most responses are gone long before that.`;
 }
 
 /** Average minutes between whole-cache clears since this process started; null without enough data. */
@@ -71,5 +71,5 @@ export function sizeVsClearsText(bytes: number, fullClears: number, sinceIso: st
 	if (minutes === null || minutes > CONSTANT_CLEAR_MINUTES) return null;
 	// Times per hour, like Analysis (minutes with a whole-cache clear).
 	const rate = formatTimesPerHour(60, minutes * 60);
-	return `Since Directus started, changes emptied the whole cache about ${rate} times per hour, so it likely never gets the chance to grow: ${formatBytes(bytes)} now.`;
+	return `Changes clear the whole cache about ${rate} times per hour, so it can't grow: ${formatBytes(bytes)} now.`;
 }
