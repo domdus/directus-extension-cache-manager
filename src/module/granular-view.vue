@@ -224,6 +224,7 @@
 </template>
 
 <script setup lang="ts">
+import { useRoute } from 'vue-router';
 import { computed, onMounted, ref } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import { useRules } from './composables/use-rules';
@@ -250,7 +251,9 @@ const restartForLifetimes = computed(
 );
 /** The filter shows up once the list gets long. */
 const FILTER_FROM = 5;
-const filter = ref('');
+/** Opened from Analysis with ?rule=<collection>: show that rule. */
+const ruleQuery = useRoute().query['rule'];
+const filter = ref(typeof ruleQuery === 'string' ? ruleQuery : '');
 const shownNames = computed(() => {
 	const term = filter.value.trim().toLowerCase();
 	if (!term || ruleNames.value.length <= FILTER_FROM) return ruleNames.value;

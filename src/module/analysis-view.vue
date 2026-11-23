@@ -39,7 +39,7 @@
 					show which fields changed.
 				</p>
 			</sidebar-detail>
-			<sidebar-detail id="strategy" icon="lightbulb" title="What Never to Clear">
+			<sidebar-detail v-if="!granular" id="strategy" icon="lightbulb" title="What Never to Clear">
 				<p class="sidebar-text">
 					Good candidates change very often and don't need to be up to date to the second: counters, logs, statistics.
 				</p>
@@ -49,8 +49,18 @@
 				</p>
 			</sidebar-detail>
 			<sidebar-detail id="recommendations" icon="recommend" title="Suggestions">
-				<p class="sidebar-text">A collection is suggested when it</p>
-				<ul class="sidebar-list">
+				<template v-if="granular">
+					<p class="sidebar-text">
+						A collection gets a Skip Fields suggestion when it changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }}
+						times per hour and most of its changes only touch the same 1 to 3 fields, like a view counter.
+					</p>
+					<p class="sidebar-text">
+						This is read from its revisions, so it needs "Activity &amp; Revision Tracking" set to track revisions. Fields
+						Directus fills in itself, like Date Updated, don't count.
+					</p>
+				</template>
+				<p v-if="!granular" class="sidebar-text">A collection is suggested when it</p>
+				<ul v-if="!granular" class="sidebar-list">
 					<li>changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }} times per hour,</li>
 					<li>is not a Directus system collection,</li>
 					<li>is not mostly changed by editors in the Data Studio.</li>
@@ -78,9 +88,13 @@
 			<template v-else>
 			<v-divider class="section-divider" large :inline-title="false" :style="dividerStyle">
 				<template #icon><v-icon name="list_alt" /></template>
-				Clear Rate
+				{{ granular ? 'Overview' : 'Clear Rate' }}
 			</v-divider>
-			<p class="explain intro">
+			<p v-if="granular" class="explain intro">
+				Granular mode is on: a change clears only the cached responses of its own collection. For a busy collection, add a
+				rule with Skip Fields or a lifetime.
+			</p>
+			<p v-else class="explain intro">
 				How often changes cleared the whole cache in the chosen period. Collections with a rule that never clears, or on
 				the ignore list, don't count. Cached responses expire {{ ttlText }} if nothing clears them sooner.
 			</p>
@@ -96,16 +110,9 @@
 						<router-link to="/cache-manager">Open Status</router-link>
 					</span>
 				</v-notice>
-				<v-notice v-if="granular" type="info" class="notice">
-					<span>
-						Granular mode is on, so a change clears only the responses that use its collection. The numbers below are the
-						whole-cache clears of Global mode. For busy collections, Skip Fields or a lifetime on
-						<router-link to="/cache-manager/cache">Granular Cache</router-link> is usually enough.
-					</span>
-				</v-notice>
 
 				<div class="summary-row">
-					<section class="summary-bar" aria-label="Cache clear rates">
+					<section v-if="!granular" class="summary-bar" aria-label="Cache clear rates">
 						<div class="stat">
 							<span class="stat-value">{{ formatTimesPerHour(analysis.purgeMinutes, analysis.windowMinutes) }}/h</span>
 							<span class="stat-label">
@@ -147,7 +154,7 @@
 				</div>
 				<p v-if="notMeasuredLine" class="caption">{{ notMeasuredLine }}</p>
 
-				<template v-if="analysis.recommendedList.length">
+				<template v-if="!granular && analysis.recommendedList.length">
 					<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 						<template #icon><v-icon name="recommend" /></template>
 						Suggestions
@@ -157,7 +164,7 @@
 						<router-link to="/cache-manager/cache">Granular Cache</router-link>, for example with Skip Fields.
 					</p>
 				</template>
-				<div v-if="analysis.recommendedList.length" class="suggest-row">
+				<div v-if="!granular && analysis.recommendedList.length" class="suggest-row">
 					<div class="suggest-copy">
 						<div class="suggest-head">
 							<strong>
@@ -192,7 +199,43 @@
 					</v-button>
 				</div>
 
-				<div class="toolbar">
+				<template v-if="granular && skipList.length">
+					<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
+						<template #icon><v-icon name="recommend" /></template>
+						Suggestions
+					</v-divider>
+					<p class="explain intro">
+						Most changes to these collections only touch the same fields, like a view counter. A rule with these Skip Fields
+						keeps the cache for those changes and still clears on real edits.
+					</p>
+					<div v-for="item in skipList" :key="item.collection" class="suggest-row">
+						<div class="suggest-copy">
+							<div class="suggest-head">
+								<strong>{{ item.collection }}</strong>
+								<span>Skip Fields</span>
+								<div class="suggest-chips">
+									<v-chip v-for="field in item.fields" :key="field" small :class="{ 'chip-warning': looksSensitiveField(field) }">
+										{{ field }}
+									</v-chip>
+								</div>
+							</div>
+							<span>With this rule, {{ Math.round(item.coveredShare * 100) }} % of its changes keep the cache.</span>
+							<span v-if="item.fields.some(looksSensitiveField)" class="warning-text">
+								Check first: apps may need {{ item.fields.filter(looksSensitiveField).join(', ') }} up to date.
+							</span>
+						</div>
+						<v-button
+							small
+							:secondary="skipAdded(item)"
+							:disabled="skipAdded(item)"
+							@click="applySkip(item)"
+						>
+							{{ skipAdded(item) ? 'Added to your changes' : 'Add rule' }}
+						</v-button>
+					</div>
+				</template>
+
+				<div v-if="!granular" class="toolbar">
 					<div class="selection-actions">
 						<v-button small secondary :disabled="!changes.toKeep.length" @click="neverClearSelected">
 							Never clear selected ({{ changes.toKeep.length }})
@@ -222,7 +265,7 @@
 				<table class="analysis">
 					<thead>
 						<tr>
-							<th class="check-col">
+							<th v-if="!granular" class="check-col">
 								<v-checkbox
 									:model-value="allSelected"
 									:indeterminate="someSelected"
@@ -233,14 +276,14 @@
 							<th>Collection</th>
 							<th class="num">Changes</th>
 							<th class="num">Changed in</th>
-							<th class="num">If never cleared</th>
+							<th v-if="!granular" class="num">If never cleared</th>
 							<th>Status</th>
-							<th>Suggestion</th>
+							<th>{{ granular ? 'Rule' : 'Suggestion' }}</th>
 						</tr>
 					</thead>
 					<tbody>
 						<tr v-for="row in rows" :key="row.collection">
-							<td class="check-col">
+							<td v-if="!granular" class="check-col">
 								<v-checkbox
 									:model-value="selected.includes(row.collection)"
 									:aria-label="`Select ${row.collection}`"
@@ -250,7 +293,7 @@
 							<td class="name">{{ row.collection }}</td>
 							<td class="num">{{ row.measured ? formatNumber(row.writes) : '–' }}</td>
 							<td class="num">{{ row.measured ? formatMinutesShort(row.minutes, analysis.windowMinutes) : '–' }}</td>
-							<td class="num">{{ row.ignored || !row.measured ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
+							<td v-if="!granular" class="num">{{ row.ignored || !row.measured ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
 							<td>
 								<span
 									v-tooltip="stateTooltip(row)"
@@ -270,6 +313,19 @@
 								>
 									Turn on tracking
 								</v-button>
+								<span v-else-if="granular" class="rule-cell">
+									<span
+										v-if="skipFor(row.collection)"
+										v-tooltip="skipTooltip(skipFor(row.collection)!)"
+										class="badge"
+										:class="{ 'badge--warning': skipFor(row.collection)!.fields.some(looksSensitiveField) }"
+									>
+										Keeps {{ Math.round(skipFor(row.collection)!.coveredShare * 100) }} %
+									</span>
+									<v-button v-if="!configuredSet.has(row.collection) && isTargetable(row.collection)" x-small secondary @click="openRule(row.collection)">
+										{{ rulesDraft.collections[row.collection] ? 'Edit rule' : 'Add rule' }}
+									</v-button>
+								</span>
 								<span
 									v-else-if="row.recommended"
 									v-tooltip="suggestionTooltip(row.collection, state?.effective.ttl ?? '')"
@@ -287,8 +343,10 @@
 
 				<p class="meta">
 					{{ new Date(analysis.from).toLocaleString() }} to {{ new Date(analysis.to).toLocaleString() }}.
-					"Changed in": minutes with at least one change, and the rate per hour. "If never cleared": how many fewer
-					clears per hour a never-clear rule for that collection gives. Bigger is better.
+					"Changed in": minutes with at least one change, and the rate per hour.
+					<template v-if="!granular">
+						"If never cleared": how many fewer clears per hour a never-clear rule for that collection gives. Bigger is better.
+					</template>
 					<template v-if="!analysis.editorHeuristic">
 						PUBLIC_URL is not a full URL, so changes by editors can't be told apart from changes by apps.
 					</template>
@@ -302,13 +360,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { purgeMinutes } from '../shared/analysis';
 import { buildRows, retentionWarning, unmeasuredLine, type TableRow } from '../shared/coverage';
 import { ROW_STATE_LABELS, looksSensitive, rowState, selectionChanges, suggestionTooltip, type RowState } from '../shared/selection';
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
 import { formatDurationLabel } from '../shared/duration';
 import { ttlVsPurgeText } from '../shared/health';
-import { neverClearCollections } from '../shared/rules';
+import { isTargetable, neverClearCollections } from '../shared/rules';
+import { looksSensitiveField, ruleCovers, type SkipSuggestion } from '../shared/skip-fields';
 import { useRules } from './composables/use-rules';
 import {
 	formatTimes,
@@ -483,6 +543,43 @@ const otherCollectionChoices = computed(() => otherCollections.value.map((name) 
 /** Picking a collection adds its rule right away (no separate button). */
 function addOther(name: string | null) {
 	if (name) neverClear([name]);
+}
+
+const router = useRouter();
+
+/** Skip Fields suggestions that the saved rules don't cover yet (Granular mode). */
+const skipList = computed<SkipSuggestion[]>(() =>
+	(analysis.value?.skipSuggestions ?? []).filter(
+		(item) => !configuredSet.value.has(item.collection) && !ruleCovers(rulesData.value?.config.collections[item.collection], item.fields),
+	),
+);
+
+function skipFor(collection: string): SkipSuggestion | undefined {
+	return skipList.value.find((item) => item.collection === collection);
+}
+
+function skipTooltip(item: SkipSuggestion): string {
+	const ttl = state.value?.effective.ttl ? formatDurationLabel(state.value.effective.ttl) : 'the cache lifetime';
+	return `Skip Fields ${item.fields.join(', ')}: ${Math.round(item.coveredShare * 100)} % of its changes keep the cache. In cached responses, ${item.fields.join(', ')} can then be up to ${ttl} old.`;
+}
+
+function skipAdded(item: SkipSuggestion): boolean {
+	return ruleCovers(rulesDraft.collections[item.collection], item.fields);
+}
+
+/** Adds the suggested Skip Fields to the collection's rule (a new rule if there is none). Saved with Save & Apply. */
+function applySkip(item: SkipSuggestion) {
+	addRule(item.collection);
+	const rule = rulesDraft.collections[item.collection]!;
+	updateRule(item.collection, { skipFields: [...new Set([...rule.skipFields, ...item.fields])] });
+}
+
+/** Opens the collection's rule on Granular Cache. A new rule starts with the suggested Skip Fields, if any. */
+function openRule(collection: string) {
+	const suggestion = skipFor(collection);
+	if (suggestion && !rulesDraft.collections[collection]) applySkip(suggestion);
+	else addRule(collection);
+	router.push({ path: '/cache-manager/cache', query: { rule: collection } });
 }
 
 async function save() {
@@ -771,6 +868,11 @@ th {
 }
 .warning-text {
 	color: var(--theme--warning, var(--warning));
+}
+.rule-cell {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
 }
 .badge {
 	display: inline-block;

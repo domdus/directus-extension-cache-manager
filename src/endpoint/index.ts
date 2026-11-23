@@ -1,9 +1,10 @@
 import { defineEndpoint } from '@directus/extensions-sdk';
 import type { NextFunction, Request, Response } from 'express';
-import { buildAnalysis, parseHours, toBuckets } from '../shared/analysis';
+import { buildAnalysis, isRecommendable, parseHours, toBuckets, type Analysis } from '../shared/analysis';
 import { activityRetentionHours, unmeasuredCollections } from '../shared/coverage';
 import { parseDuration } from '../shared/duration';
-import { DEFAULT_HOURS, EXTENSION_ID, LOG_PREFIX, MAX_HOURS, WRITE_ACTIONS } from '../shared/constants';
+import { DEFAULT_HOURS, EXTENSION_ID, LOG_PREFIX, MAX_HOURS, RECOMMEND_MIN_SHARE, WRITE_ACTIONS } from '../shared/constants';
+import { AUTO_SPECIALS, SKIP_SAMPLE_SIZE, changedFields, suggestSkipFields, type SkipSuggestion } from '../shared/skip-fields';
 import { isEmptyOverride, mergeValues, readValues, sameValues, validateInput, type StoredOverride } from '../shared/settings';
 import {
 	applyEffective,
@@ -21,6 +22,9 @@ import {
 import { applyRules, statusWithFreshSize } from '../api/targeted';
 import { rememberSaved } from '../api/sync';
 import { DEFAULT_RULES, describeRules, isTargetable, neverClearCollections, validateRules } from '../shared/rules';
+
+/** Collections checked for Skip Fields suggestions per analysis (the busiest first). */
+const MAX_SKIP_COLLECTIONS = 10;
 
 class HttpError extends Error {
 	constructor(
@@ -105,6 +109,45 @@ export default defineEndpoint({
 
 		router.get('/state', wrap(state));
 
+		/** Busy collections whose changes mostly touch the same few fields, from a sample of their update revisions. */
+		async function skipSuggestions(analysis: Analysis, schema: any, from: Date): Promise<SkipSuggestion[]> {
+			const busy = analysis.collections
+				.filter((entry) => entry.share >= RECOMMEND_MIN_SHARE && isRecommendable(entry.collection) && schema.collections?.[entry.collection])
+				.slice(0, MAX_SKIP_COLLECTIONS);
+			const suggestions: SkipSuggestion[] = [];
+			for (const entry of busy) {
+				const collection = entry.collection;
+				const info = schema.collections[collection];
+				const exclude = new Set<string>([info.primary]);
+				for (const [name, field] of Object.entries<any>(info.fields ?? {})) {
+					const special: string[] = Array.isArray(field?.special) ? field.special : [];
+					if (special.some((value) => AUTO_SPECIALS.includes(value))) exclude.add(name);
+				}
+				const counts = await database('directus_activity')
+					.select('action')
+					.count({ total: '*' })
+					.where('collection', collection)
+					.where('timestamp', '>=', from)
+					.whereIn('action', WRITE_ACTIONS)
+					.groupBy('action');
+				const all = counts.reduce((sum: number, row: any) => sum + Number(row.total), 0);
+				const updates = Number(counts.find((row: any) => row.action === 'update')?.total ?? 0);
+				if (!all || !updates) continue;
+				const revisions = await database('directus_revisions as r')
+					.join('directus_activity as a', 'a.id', 'r.activity')
+					.select('r.delta')
+					.where('a.collection', collection)
+					.where('a.action', 'update')
+					.where('a.timestamp', '>=', from)
+					.orderBy('a.id', 'desc')
+					.limit(SKIP_SAMPLE_SIZE);
+				const fields = revisions.map((row: any) => changedFields(row.delta, exclude));
+				const suggestion = suggestSkipFields(collection, fields, updates / all);
+				if (suggestion) suggestions.push(suggestion);
+			}
+			return suggestions;
+		}
+
 		router.get(
 			'/analysis',
 			wrap(async (req) => {
@@ -138,7 +181,8 @@ export default defineEndpoint({
 				const candidate = candidateRaw === null ? null : candidateRaw.split(',').map((entry) => entry.trim()).filter(Boolean);
 				const effective = readValues(env);
 
-				return buildAnalysis(toBuckets(rows, startMinute), {
+				const schema = await ctx.getSchema();
+				const result = buildAnalysis(toBuckets(rows, startMinute), {
 					hours,
 					windowMinutes,
 					from,
@@ -148,9 +192,17 @@ export default defineEndpoint({
 					autoPurge: effective.autoPurge,
 					editorHeuristic: Boolean(origin),
 					candidate,
-					unmeasured: unmeasuredCollections((await ctx.getSchema()).collections ?? {}),
+					unmeasured: unmeasuredCollections(schema.collections ?? {}),
 					activityRetentionHours: activityRetentionHours(env['RETENTION_ENABLED'], parseDuration(env['ACTIVITY_RETENTION'])),
 				});
+				try {
+					result.skipSuggestions = await skipSuggestions(result, schema, from);
+				} catch (error) {
+					// Suggestions are extra: the counts stay useful without them.
+					ctx.logger.warn(`${LOG_PREFIX} Skip Fields suggestions failed: ${(error as Error)?.message ?? error}`);
+					result.skipSuggestions = [];
+				}
+				return result;
 			}),
 		);
 

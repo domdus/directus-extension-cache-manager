@@ -1,3 +1,4 @@
+import type { SkipSuggestion } from './skip-fields';
 import { EDITOR_SHARE_MAX, RECOMMEND_MIN_SHARE, RECOMMENDABLE_SYSTEM_COLLECTIONS } from './constants';
 
 /** One row of the SQL aggregate: writes to a collection within one minute of the window. */
@@ -49,6 +50,8 @@ export type Analysis = {
 	unmeasured: string[];
 	/** Hours of activity Directus keeps (retention), null when not limited. */
 	activityRetentionHours: number | null;
+	/** Busy collections whose changes mostly touch the same few fields (filled in by the endpoint). */
+	skipSuggestions?: SkipSuggestion[];
 };
 
 export type MinuteSets = Map<string, Set<number>>;
