@@ -30,7 +30,7 @@
 				Compare the installed version with the latest version on npm.
 			</p>
 			<div class="actions">
-				<v-button secondary :loading="checkingUpdates" @click="checkUpdates">Check now</v-button>
+				<v-button secondary :loading="checkingUpdates" @click="checkUpdates">Check Now</v-button>
 				<v-button v-if="updateInfo?.has_update && marketplaceUrl" secondary :to="marketplaceUrl">Marketplace</v-button>
 				<v-button v-if="updateInfo" secondary :href="EXTENSION_GITHUB_URL">GitHub</v-button>
 			</div>

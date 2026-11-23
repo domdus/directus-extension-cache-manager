@@ -207,7 +207,7 @@
 						<thead>
 							<tr>
 								<th>Time</th>
-								<th>What happened</th>
+								<th>What Happened</th>
 								<th>Result</th>
 							</tr>
 						</thead>
@@ -270,15 +270,15 @@ const peakBytes = computed(() => {
 const COLORS = {
 	full: 'var(--theme--warning, var(--warning))',
 	targeted: 'var(--theme--success, var(--success))',
-	skipped: 'var(--theme--foreground-subdued, var(--foreground-subdued))',
+	skipped: 'var(--blue, #3399ff)',
 	size: 'var(--theme--primary, var(--primary))',
 };
 const clearLegend = [
-	{ label: 'Global cache', color: COLORS.full },
+	{ label: 'Global Cache', color: COLORS.full },
 	{ label: 'Granular', color: COLORS.targeted },
-	{ label: 'Kept by rule', color: COLORS.skipped },
+	{ label: 'Kept by Rule', color: COLORS.skipped },
 ];
-const sizeLegend = [{ label: 'Largest size per hour', color: COLORS.size }];
+const sizeLegend = [{ label: 'Largest Size per Hour', color: COLORS.size }];
 
 function hourLabel(iso: string): string {
 	return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -487,7 +487,7 @@ th {
 	color: var(--theme--success, var(--success));
 }
 .result--skipped {
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	color: var(--blue, #3399ff);
 }
 .charts {
 	display: grid;

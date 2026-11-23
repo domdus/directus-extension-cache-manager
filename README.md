@@ -74,9 +74,9 @@ Prefer a small rule over "never clear". Never clearing `videos` because of a vie
 
 Reads the Directus activity log and shows, for the last hour up to the last 7 days, how often changes cleared the whole cache and which collections caused it.
 
-- **Suggested**: collections that change at least 3 times per hour, mostly not by editors. **Apply suggested** adds a rule that never clears for them.
+- **Suggested**: collections that change at least 3 times per hour, mostly not by editors. **Apply Suggested** adds a rule that never clears for them.
 - **Check impact** marks names like subscriptions, payments or access, which apps may need up to date.
-- Select collections and click **Never clear selected**, or **Clear again** to undo.
+- Select collections and click **Never Clear Selected**, or **Clear Again** to undo.
 
 Collections with activity tracking turned off (**Not measured**) and some Flows can't be counted. Works with PostgreSQL and MySQL.
 

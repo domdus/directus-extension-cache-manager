@@ -197,17 +197,17 @@
 						:disabled="!addableRecommendations.length"
 						@click="neverClear(addableRecommendations)"
 					>
-						{{ addableRecommendations.length ? 'Apply suggested' : 'Added to your changes' }}
+						{{ addableRecommendations.length ? 'Apply Suggested' : 'Added to Your Changes' }}
 					</v-button>
 				</div>
 
 				<div v-if="!granular" class="toolbar">
 					<div class="selection-actions">
 						<v-button small secondary :disabled="!changes.toKeep.length" @click="neverClearSelected">
-							Never clear selected ({{ changes.toKeep.length }})
+							Never Clear Selected ({{ changes.toKeep.length }})
 						</v-button>
 						<v-button small secondary :disabled="!changes.toClear.length" @click="clearAgainSelected">
-							Clear again ({{ changes.toClear.length }})
+							Clear Again ({{ changes.toClear.length }})
 						</v-button>
 					</div>
 					<div class="add-other">
@@ -242,7 +242,7 @@
 							<th>Collection</th>
 							<th class="num">Changes</th>
 							<th class="num">Changed in</th>
-							<th v-if="!granular" class="num">If never cleared</th>
+							<th v-if="!granular" class="num">If Never Cleared</th>
 							<th>Status</th>
 							<th v-if="granular" class="num">Potential</th>
 							<th>{{ granular ? 'Rule' : 'Suggestion' }}</th>
@@ -267,7 +267,7 @@
 									class="state"
 									:class="stateClass(row)"
 								>
-									{{ ROW_STATE_LABELS[stateOf(row)] }}
+									{{ ruleOf(row) ? 'Cache rule' : ROW_STATE_LABELS[stateOf(row)] }}
 								</span>
 							</td>
 							<td v-if="granular" class="num">
@@ -284,7 +284,7 @@
 									secondary
 									:to="`/settings/data-model/${row.collection}`"
 								>
-									Turn on tracking
+									Turn On Tracking
 								</v-button>
 								<span v-else-if="granular" class="rule-cell">
 									<v-button
@@ -295,7 +295,7 @@
 										:kind="skipFor(row.collection)?.fields.some(looksSensitiveField) && !rulesDraft.collections[row.collection] ? 'warning' : 'normal'"
 										@click="openRule(row.collection)"
 									>
-										{{ rulesDraft.collections[row.collection] ? 'Edit rule' : skipFor(row.collection) ? 'Add suggested rule' : 'Add rule' }}
+										{{ rulesDraft.collections[row.collection] ? 'Edit Rule' : skipFor(row.collection) ? 'Add Suggested Rule' : 'Add Rule' }}
 									</v-button>
 								</span>
 								<span
@@ -317,7 +317,7 @@
 					{{ new Date(analysis.from).toLocaleString() }} to {{ new Date(analysis.to).toLocaleString() }}.
 					"Changed in": minutes with at least one change, and the rate per hour.
 					<template v-if="!granular">
-						"If never cleared": how many fewer clears per hour a never-clear rule for that collection gives. Bigger is better.
+						"If Never Cleared": how many fewer clears per hour a never-clear rule for that collection gives. Bigger is better.
 					</template>
 					<template v-if="!analysis.editorHeuristic">
 						PUBLIC_URL is not a full URL, so changes by editors can't be told apart from changes by apps.
@@ -339,7 +339,7 @@ import { ROW_STATE_LABELS, looksSensitive, rowState, selectionChanges, suggestio
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
 import { formatDurationLabel } from '../shared/duration';
 import { ttlVsPurgeText } from '../shared/health';
-import { isTargetable, neverClearCollections } from '../shared/rules';
+import { isTargetable, neverClearCollections, type CollectionRule } from '../shared/rules';
 import { looksSensitiveField, ruleCovers, type SkipSuggestion } from '../shared/skip-fields';
 import { useRules } from './composables/use-rules';
 import {
@@ -448,7 +448,25 @@ function stateOf(row: TableRow): RowState {
 	return rowState(row.collection, row.measured, draftKept.value, savedKept.value);
 }
 
+/** Granular mode: the saved rule of a collection whose changes still clear (Skip Fields, actions off or a lifetime). */
+function ruleOf(row: TableRow): CollectionRule | undefined {
+	if (!granular.value || stateOf(row) !== 'clears') return undefined;
+	return rulesData.value?.config.collections[row.collection];
+}
+
+function ruleTooltip(rule: CollectionRule): string {
+	const parts: string[] = [];
+	const off = (['create', 'update', 'delete'] as const).filter((action) => !rule[action]);
+	if (off.length) parts.push(`doesn't clear on ${off.join(', ')}`);
+	if (rule.update && rule.skipFields.length) parts.push(`changes to only ${rule.skipFields.join(', ')} keep the cache`);
+	if (rule.ttl) parts.push(`cached for ${formatDurationLabel(rule.ttl)}`);
+	const what = parts.length ? `Its rule: ${parts.join('; ')}.` : 'It has a rule.';
+	return `${what} The activity log doesn't show which changes the rule kept, so all changes count here. Edit the rule on Granular Cache.`;
+}
+
 function stateTooltip(row: TableRow): string | undefined {
+	const rule = ruleOf(row);
+	if (rule) return ruleTooltip(rule);
 	if (configuredSet.value.has(row.collection)) return 'On the ignore list in the Directus configuration (CACHE_AUTO_PURGE_IGNORE_LIST). Change it there.';
 	if (stateOf(row) === 'unmeasured') return notMeasuredTooltip;
 	if (draftKept.value.has(row.collection)) return 'Its rule never clears. Edit it on Granular Cache.';
@@ -458,8 +476,9 @@ function stateTooltip(row: TableRow): string | undefined {
 function stateClass(row: TableRow): Record<string, boolean> {
 	const value = stateOf(row);
 	return {
+		'state--rule': !!ruleOf(row),
 		'state--ignored': value === 'ignored',
-		'state--clears': value === 'clears' && row.savedMinutes * 60 >= (analysis.value?.windowMinutes ?? Infinity),
+		'state--clears': value === 'clears' && !ruleOf(row) && row.savedMinutes * 60 >= (analysis.value?.windowMinutes ?? Infinity),
 		'state--pending': value === 'will-ignore' || value === 'will-clear',
 		'state--pending-ignore': value === 'will-ignore',
 		'state--pending-clear': value === 'will-clear',
@@ -490,7 +509,7 @@ const clearsTooltip = computed(() => {
 const changesTooltip = computed(() => {
 	const current = analysis.value;
 	if (!current) return '';
-	if (!keptDirty.value) return 'Select collections in the table and click Never clear selected to see the effect here.';
+	if (!keptDirty.value) return 'Select collections in the table and click Never Clear Selected to see the effect here.';
 	return `With your changes: ${formatTimes(whatIf.value, current.windowMinutes)}. Lower is better.`;
 });
 
@@ -823,6 +842,10 @@ th {
 	background: currentColor;
 }
 /* Keeps cache (ignored): changes never clear the cache. */
+/* Has a rule in Granular mode: Directus blue. */
+.state--rule {
+	color: var(--blue, #3399ff);
+}
 .state--ignored {
 	color: var(--theme--success, var(--success));
 }

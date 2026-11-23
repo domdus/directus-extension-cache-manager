@@ -21,7 +21,7 @@ export const ROW_STATE_LABELS: Record<RowState, string> = {
 };
 
 /**
- * Which selected collections "Never clear selected" and "Clear again" would change in the draft. Collections on the
+ * Which selected collections "Never Clear Selected" and "Clear Again" would change in the draft. Collections on the
  * configured ignore list can't be changed here.
  */
 export function selectionChanges(
