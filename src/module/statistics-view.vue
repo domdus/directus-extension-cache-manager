@@ -149,9 +149,9 @@
 						<div class="stat">
 							<span class="stat-value">{{ formatBytes(data.status.swept.bytes) }}</span>
 							<span class="stat-label">
-								Freed
+								Expired
 								<v-icon
-									v-tooltip.top="`${formatNumber(data.status.swept.entries)} expired ${data.status.swept.entries === 1 ? 'entry' : 'entries'} deleted since Directus started. Directus only deletes an expired entry when it is requested again. Cache Manager deletes them every minute.`"
+									v-tooltip.top="`Size of the expired entries deleted since Directus started (${formatNumber(data.status.swept.entries)} ${data.status.swept.entries === 1 ? 'entry' : 'entries'}). Directus only deletes an expired entry when it is requested again. Cache Manager deletes them every minute.`"
 									name="help_outline"
 									small
 									class="stat-info"
