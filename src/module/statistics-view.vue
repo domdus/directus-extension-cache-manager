@@ -169,13 +169,20 @@
 					</template>
 				</p>
 				<div v-if="largest.length" class="largest">
-					<span class="label">{{ data.status.size ? 'Largest Collections' : 'Most Cached Collections' }}</span>
-					<p class="explain">A response that uses several collections counts for each of them.</p>
+					<span class="label">What a Change Clears</span>
+					<p class="explain">
+						The cached responses that use each collection. A change to the collection clears them. A response that uses
+						several collections is in each of their rows, so the rows add up to more than the total.
+					</p>
 					<div v-for="row in largest" :key="row.name" class="largest-row">
 						<span class="largest-name">{{ row.name }}</span>
 						<span class="largest-bar"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
-						<span class="largest-count">{{ formatNumber(row.count) }} {{ row.count === 1 ? 'response' : 'responses' }}</span>
+						<span class="largest-count">
+							{{ formatNumber(row.count) }}<template v-if="row.total"> of {{ formatNumber(row.total) }}</template>
+							{{ (row.total || row.count) === 1 ? 'response' : 'responses' }}
+						</span>
 						<span class="largest-value">{{ row.bytes === null ? '' : formatBytes(row.bytes) }}</span>
+						<span class="largest-share">{{ Math.round(row.share * 100) }} %</span>
 					</div>
 				</div>
 
@@ -306,18 +313,23 @@ const sizeColumns = computed<BarColumn[]>(() =>
 	})),
 );
 
-/** Collections by cache size (memory store), or by number of cached responses when the size can't be measured (Redis). */
+/**
+ * What a change to each collection clears: the cached responses that use it, as a share of the whole cache (by size
+ * in memory, by number of responses with Redis). Rows overlap, so they add up to more than the total.
+ */
 const largest = computed(() => {
-	const counts = data.value?.status.indexedByCollection ?? {};
-	const bytes = data.value?.status.bytesByCollection ?? {};
-	const bySize = Object.keys(bytes).length > 0;
+	const status = data.value?.status;
+	const counts = status?.indexedByCollection ?? {};
+	const bytes = status?.bytesByCollection ?? {};
+	const bySize = Object.keys(bytes).length > 0 && !!status?.size?.bytes;
+	const total = status && status.indexed > 0 ? status.indexed : 0;
+	const totalOf = bySize ? status!.size!.bytes : total;
 	const rows = Object.keys(bySize ? bytes : counts)
 		.filter((name) => name !== '*')
-		.map((name) => ({ name, count: counts[name] ?? 0, bytes: bySize ? (bytes[name] ?? 0) : null }))
+		.map((name) => ({ name, count: counts[name] ?? 0, total, bytes: bySize ? (bytes[name] ?? 0) : null }))
 		.sort((a, b) => (bySize ? b.bytes! - a.bytes! : b.count - a.count))
 		.slice(0, 8);
-	const top = (bySize ? rows[0]?.bytes : rows[0]?.count) || 1;
-	return rows.map((row) => ({ ...row, share: (bySize ? row.bytes! : row.count) / top }));
+	return rows.map((row) => ({ ...row, share: totalOf > 0 ? Math.min(1, (bySize ? row.bytes! : row.count) / totalOf) : 0 }));
 });
 
 function times(count: number): string {
@@ -502,7 +514,7 @@ th {
 }
 .largest-row {
 	display: grid;
-	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 8rem 5rem;
+	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 10rem 5rem 3rem;
 	align-items: center;
 	gap: 12px;
 	padding: 4px 0;
@@ -527,9 +539,14 @@ th {
 	font-variant-numeric: tabular-nums;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
-.largest-value {
+.largest-value,
+.largest-share {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
+}
+
+.largest-share {
+	font-weight: 600;
 }
 .count {
 	cursor: pointer;
