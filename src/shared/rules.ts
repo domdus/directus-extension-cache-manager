@@ -233,7 +233,7 @@ export function describeRule(rule: CollectionRule): string {
 	else if (on.length < 3) parts.push(`Clears on ${on.join(' and ')}`);
 	if (rule.update && rule.skipFields.length) parts.push(`keeps the cache when only ${rule.skipFields.join(', ')} ${rule.skipFields.length === 1 ? 'changes' : 'change'}`);
 	if (rule.ttl) parts.push(`cached for ${formatDurationLabel(rule.ttl)}`);
-	return parts.join(' · ') || 'Default';
+	return parts.join(' · ') || 'Same as without a rule: every change clears';
 }
 
 /** One line for the log. */
