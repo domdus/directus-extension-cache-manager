@@ -10,9 +10,16 @@ export function ttlVsPurgeText(
 	ttl: string | null | undefined,
 	purgeMinutes: number,
 	windowMinutes: number,
-	options?: { granular?: boolean },
+	options?: { granular?: boolean; wideMinutes?: number },
 ): string | null {
 	const ttlMs = parseDuration(ttl);
+	if (options?.granular && options.wideMinutes !== undefined && options.wideMinutes > 0 && ttlMs && windowMinutes > 0) {
+		const wideInterval = (windowMinutes / options.wideMinutes) * 60_000;
+		if (wideInterval < ttlMs / 2) {
+			const wideRate = formatTimesPerHour(options.wideMinutes, windowMinutes);
+			return `Changes to users, roles, permissions, settings or the data model still clear the whole cache, about ${wideRate} times per hour, so cached responses rarely last the full ${formatDurationLabel(ttl)}.`;
+		}
+	}
 	if (!ttlMs || ttlMs <= 0 || !(windowMinutes > 0) || !(purgeMinutes > 0)) return null;
 	const intervalMs = (windowMinutes / purgeMinutes) * 60_000;
 	if (intervalMs >= ttlMs / 2) return null;

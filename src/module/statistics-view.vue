@@ -92,9 +92,9 @@
 					<div v-if="emptiedEvery" class="stat">
 						<span class="stat-value">{{ emptiedEvery }}</span>
 						<span class="stat-label">
-							Emptied
+							{{ data.status.shared ? 'Emptied by This Server' : 'Emptied' }}
 							<v-icon
-								v-tooltip.top="'Average time between global cache clears. Several clears in one minute count once. If this is much shorter than the Cache Lifetime, cached responses rarely reach their lifetime.'"
+								v-tooltip.top="`Average time between global cache clears. Several clears in one minute count once. If this is much shorter than the Cache Lifetime, cached responses rarely reach their lifetime.${data.status.shared ? ' With Redis, each server counts only its own clears; a clear on another server also empties the shared cache, so it is emptied more often.' : ''}`"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -176,7 +176,7 @@
 					</p>
 					<div v-for="row in largest" :key="row.name" class="largest-row">
 						<span class="largest-name">{{ row.name }}</span>
-						<span class="largest-bar" :class="{ 'largest-bar--kept': row.kept }"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
+						<span class="largest-bar" :class="{ 'largest-bar--kept': row.kept }"><span :style="{ inlineSize: `${row.bar * 100}%` }" /></span>
 						<span class="largest-count">
 							{{ formatNumber(row.count) }}<template v-if="row.total"> of {{ formatNumber(row.total) }}</template>
 							{{ (row.total || row.count) === 1 ? 'response' : 'responses' }}
@@ -189,8 +189,20 @@
 						>
 							Kept
 						</span>
-						<span v-else class="largest-share">{{ Math.round(row.share * 100) }} %</span>
+						<span v-else class="largest-share">{{ row.share === null ? '' : `${Math.round(row.share * 100)} %` }}</span>
 					</div>
+					<p v-if="untraced" class="explain largest-note">
+						Every change also clears {{ formatNumber(untraced.count) }}
+						{{ untraced.count === 1 ? 'response' : 'responses' }}<template v-if="untraced.bytes !== null"> ({{ formatBytes(untraced.bytes) }})</template>
+						that Cache Manager can't trace to a collection, such as custom endpoints.
+					</p>
+					<p v-if="data.config.items && data.status.targetedActive" class="explain largest-note">
+						Clear single items is on: single-item responses (such as /items/pages/5) count in their collection's row, but a
+						change only clears those of the changed item.
+					</p>
+					<p v-if="data.status.shared" class="explain largest-note">
+						With Redis, the total number of cached responses isn't known, so the rows show no share of the cache.
+					</p>
 				</div>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
@@ -338,7 +350,22 @@ const largest = computed(() => {
 		.sort((a, b) => (bySize ? b.bytes! - a.bytes! : b.count - a.count))
 		.slice(0, 8);
 	const kept = new Set([...(data.value?.ignoreList ?? []), ...(data.value ? neverClearCollections(data.value.config) : [])]);
-	return rows.map((row) => ({ ...row, kept: kept.has(row.name), share: totalOf > 0 ? Math.min(1, (bySize ? row.bytes! : row.count) / totalOf) : 0 }));
+	// Without a total (Redis), there is no share; the bars then compare the rows with the largest one.
+	const top = Math.max(1, ...rows.map((row) => (bySize ? row.bytes! : row.count)));
+	return rows.map((row) => {
+		const value = bySize ? row.bytes! : row.count;
+		const share = totalOf > 0 ? Math.min(1, value / totalOf) : null;
+		return { ...row, kept: kept.has(row.name), share, bar: share ?? value / top };
+	});
+});
+
+/** Responses tagged "*" (dependencies unknown): every change clears them. */
+const untraced = computed(() => {
+	const status = data.value?.status;
+	const count = status?.indexedByCollection?.['*'] ?? 0;
+	if (!(count > 0)) return null;
+	const bytes = status?.bytesByCollection?.['*'];
+	return { count, bytes: bytes === undefined ? null : bytes };
 });
 
 function times(count: number): string {
@@ -628,6 +655,9 @@ th {
 
 .largest-share {
 	font-weight: 600;
+}
+.largest-note {
+	margin: 12px 0 0;
 }
 .largest-share--kept {
 	cursor: pointer;

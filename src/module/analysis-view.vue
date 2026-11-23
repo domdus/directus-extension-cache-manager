@@ -73,8 +73,20 @@
 			<v-notice v-if="rulesError" type="danger" class="notice">{{ rulesError }}</v-notice>
 			<v-notice v-if="rulesMessage" type="success" class="notice">{{ rulesMessage }}</v-notice>
 
+			<!-- Without the cache there is nothing to clear. -->
+			<v-info v-if="cacheOff && !showAnyway" icon="block" title="The Cache Is Off" center class="blank">
+				The cache is off in the Directus configuration (CACHE_ENABLED), so changes clear nothing and there is nothing to
+				analyze.
+				<template #append>
+					<div class="blank-actions">
+						<v-button to="/cache-manager">Open Status</v-button>
+						<v-button secondary @click="showAnyway = true">Show Anyway</v-button>
+					</div>
+				</template>
+			</v-info>
+
 			<!-- Without Auto Purge no change clears the cache, so there is nothing to keep. -->
-			<v-info v-if="autoPurgeOff && !showAnyway" icon="delete_sweep" title="Auto Purge Is Off" center class="blank">
+			<v-info v-else-if="autoPurgeOff && !showAnyway" icon="delete_sweep" title="Auto Purge Is Off" center class="blank">
 				Changes don't clear the cache, so there is nothing to analyze. Cached responses only update when they expire
 				({{ ttlText }}). Turn on Auto Purge on the Status page to use this page.
 				<template #append>
@@ -254,6 +266,7 @@
 								<v-checkbox
 									:model-value="selected.includes(row.collection)"
 									:aria-label="`Select ${row.collection}`"
+									:disabled="!isTargetable(row.collection)"
 									@update:model-value="(checked) => toggleRow(row.collection, checked)"
 								/>
 							</td>
@@ -273,7 +286,7 @@
 									class="state"
 									:class="stateClass(row)"
 								>
-									{{ ruleOf(row) ? 'Cache rule' : ROW_STATE_LABELS[stateOf(row)] }}
+									{{ ruleOf(row) ? 'Cache rule' : clearsEverything(row) ? 'Clears everything' : ROW_STATE_LABELS[stateOf(row)] }}
 								</span>
 							</td>
 							<td v-if="granular" class="num" data-label="Potential">
@@ -404,13 +417,14 @@ const retentionNotice = computed(() =>
 );
 /* Row selection is local to this page and only feeds the two action buttons. */
 const selected = ref<string[]>([]);
-const allSelected = computed(() => rows.value.length > 0 && selected.value.length === rows.value.length);
+const selectableCount = computed(() => rows.value.filter((row) => isTargetable(row.collection)).length);
+const allSelected = computed(() => selectableCount.value > 0 && selected.value.length === selectableCount.value);
 const someSelected = computed(() => selected.value.length > 0 && !allSelected.value);
 const changes = computed(() => selectionChanges(selected.value, draftKept.value, configuredSet.value));
 const sensitiveRecommendations = computed(() => (analysis.value?.recommendedList ?? []).filter(looksSensitive));
 
 function toggleSelectAll(checked: boolean) {
-	selected.value = checked ? rows.value.map((row) => row.collection) : [];
+	selected.value = checked ? rows.value.filter((row) => isTargetable(row.collection)).map((row) => row.collection) : [];
 }
 
 function toggleRow(collection: string, checked: boolean) {
@@ -460,10 +474,21 @@ function stateOf(row: TableRow): RowState {
 	return rowState(row.collection, row.measured, draftKept.value, savedKept.value);
 }
 
-/** Granular mode: the saved rule of a collection whose changes still clear (Skip Fields, actions off or a lifetime). */
+/**
+ * The saved rule of a collection whose changes still clear, if it keeps some of them (an action off or Skip Fields).
+ * Rules work in both modes. A rule with only a lifetime keeps no changes.
+ */
 function ruleOf(row: TableRow): CollectionRule | undefined {
-	if (!granular.value || stateOf(row) !== 'clears') return undefined;
-	return rulesData.value?.config.collections[row.collection];
+	if (stateOf(row) !== 'clears') return undefined;
+	const rule = rulesData.value?.config.collections[row.collection];
+	if (!rule) return undefined;
+	const keepsSome = !rule.create || !rule.update || !rule.delete || rule.skipFields.length > 0;
+	return keepsSome ? rule : undefined;
+}
+
+/** Granular mode: changes to users, roles, permissions, settings or the data model still clear the whole cache. */
+function clearsEverything(row: TableRow): boolean {
+	return granular.value && stateOf(row) === 'clears' && !isTargetable(row.collection);
 }
 
 function ruleTooltip(rule: CollectionRule): string {
@@ -479,6 +504,7 @@ function ruleTooltip(rule: CollectionRule): string {
 function stateTooltip(row: TableRow): string | undefined {
 	const rule = ruleOf(row);
 	if (rule) return ruleTooltip(rule);
+	if (clearsEverything(row)) return 'Changes to users, roles, permissions, settings or the data model can change any response, so they clear the whole cache, also in Granular mode.';
 	if (configuredSet.value.has(row.collection)) return 'On the ignore list in the Directus configuration (CACHE_AUTO_PURGE_IGNORE_LIST). Change it there.';
 	if (stateOf(row) === 'unmeasured') return notMeasuredTooltip;
 	if (draftKept.value.has(row.collection)) return 'Its rule never clears. Edit it on Granular Cache.';
@@ -490,6 +516,7 @@ function stateClass(row: TableRow): Record<string, boolean> {
 	return {
 		'state--rule': !!ruleOf(row),
 		'state--ignored': value === 'ignored',
+		'state--everything': clearsEverything(row),
 		'state--clears': value === 'clears' && !ruleOf(row) && row.savedMinutes * 60 >= (analysis.value?.windowMinutes ?? Infinity),
 		'state--pending': value === 'will-ignore' || value === 'will-clear',
 		'state--pending-ignore': value === 'will-ignore',
@@ -537,7 +564,7 @@ const saveText = computed(() => (rulesDirty.value ? 'Save & Apply' : 'No unsaved
 
 const otherCollections = computed(() => {
 	const shown = new Set(rows.value.map((row) => row.collection));
-	return (state.value?.collections ?? []).filter((name) => !shown.has(name));
+	return (state.value?.collections ?? []).filter((name) => !shown.has(name) && isTargetable(name));
 });
 
 /** Collections without changes in the period, for the picker above the table. */
@@ -552,7 +579,9 @@ const router = useRouter();
 
 /** Changes Cache Manager saw live that are missing from the activity log (Flows or scripts without tracking). */
 const liveGapText = computed(() => {
-	const gaps = analysis.value?.liveGaps ?? [];
+	const unmeasured = new Set(rows.value.filter((row) => !row.measured).map((row) => row.collection));
+	// Kept collections clear nothing anyway; untracked ones have their own note ("Not measured").
+	const gaps = (analysis.value?.liveGaps ?? []).filter((gap) => !savedKept.value.has(gap.collection) && !unmeasured.has(gap.collection));
 	if (!gaps.length || !analysis.value?.liveSince) return null;
 	const list = gaps
 		.slice(0, 5)
@@ -578,7 +607,8 @@ function skipTooltip(item: SkipSuggestion): string {
 	const fields = item.fields.join(', ');
 	const sensitive = item.fields.filter(looksSensitiveField);
 	const check = sensitive.length ? ` Check first: apps may need ${sensitive.join(', ')} up to date.` : '';
-	return `Suggested rule: Skip Fields ${fields}. With it, ${Math.round(item.coveredShare * 100)} % of the changes to this collection keep the cache. Now they all clear it. In cached responses, ${fields} can then be up to ${ttl} old.${check}`;
+	const now = rulesData.value?.config.collections[item.collection] ? 'Its current rule clears on these changes.' : 'Now they all clear it.';
+	return `Suggested rule: Skip Fields ${fields}. With it, ${Math.round(item.coveredShare * 100)} % of the changes to this collection keep the cache. ${now} In cached responses, ${fields} can then be up to ${ttl} old.${check}`;
 }
 
 /** Adds the suggested Skip Fields to the collection's rule (a new rule if there is none). Saved with Save & Apply. */
@@ -612,13 +642,21 @@ watch(hours, loadAnalysis);
 const granular = computed(() => !!rulesData.value?.status.targetedActive);
 /** Auto Purge off (in use now): changes clear nothing, so there is nothing to analyze. */
 const autoPurgeOff = computed(() => !!state.value && !state.value.effective.autoPurge);
+const cacheOff = computed(() => !!state.value && !state.value.env.CACHE_ENABLED);
 const showAnyway = ref(false);
 const ttlText = computed(() => (state.value?.effective.ttl ? `after ${formatDurationLabel(state.value.effective.ttl)}` : 'after the cache lifetime'));
 const ttlVsPurge = computed(() => {
 	if (!analysis.value || autoPurgeOff.value) return null;
-	return ttlVsPurgeText(state.value?.effective.ttl, analysis.value.purgeMinutes, analysis.value.windowMinutes, {
-		granular: granular.value,
-	});
+	if (granular.value) {
+		// In Granular mode only changes to collections that can't be traced clear the whole cache.
+		const wide = Object.fromEntries(Object.entries(analysis.value.minuteSets).filter(([name]) => !isTargetable(name)));
+		const wideMinutes = purgeMinutes(wide, [...savedKept.value], true);
+		return ttlVsPurgeText(state.value?.effective.ttl, analysis.value.purgeMinutes, analysis.value.windowMinutes, {
+			granular: true,
+			wideMinutes,
+		});
+	}
+	return ttlVsPurgeText(state.value?.effective.ttl, analysis.value.purgeMinutes, analysis.value.windowMinutes);
 });
 const skipCacheNotice = computed(() => {
 	if (!state.value || state.value.effective.skipAllowed) return null;
@@ -930,6 +968,9 @@ th {
 /* Has a rule in Granular mode: Directus blue. */
 .state--rule {
 	color: var(--blue, #3399ff);
+}
+.state--everything {
+	color: var(--theme--warning, var(--warning));
 }
 .state--ignored {
 	color: var(--theme--success, var(--success));

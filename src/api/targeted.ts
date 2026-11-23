@@ -563,9 +563,12 @@ function verb(action: WriteAction): string {
 	return { create: 'Created', update: 'Changed', delete: 'Deleted', upsert: 'Saved' }[action];
 }
 
-function skipReason(ctx: Touch, rule = DEFAULT_RULE): string {
+export function skipReason(ctx: Touch, rule = DEFAULT_RULE): string {
 	if (neverClears(rule)) return `${verb(ctx.action)} in ${ctx.collection} (rule: never clear)`;
-	if (ctx.action === 'update' && ctx.fields.length) return `Only ${ctx.fields.join(', ')} changed in ${ctx.collection}`;
+	// "Only … changed" only when Skip Fields kept it; with Update off, say so instead.
+	if (ctx.action === 'update' && rule.update && ctx.fields.length && ctx.fields.every((field) => rule.skipFields.includes(field))) {
+		return `Only ${ctx.fields.join(', ')} changed in ${ctx.collection}`;
+	}
 	return `${verb(ctx.action)} in ${ctx.collection} (rule: don't clear on ${ctx.action})`;
 }
 

@@ -772,3 +772,10 @@ test('items: GraphQL _by_id depends on its item; lifetimes of the collection sti
 	await new Items('pages').updateMany([5], { title: 'x' });
 	assert.ok(!cache.store.has('gql'));
 });
+
+test('skip reason: "Only … changed" only when Skip Fields kept the change', async () => {
+	const { skipReason } = await import('./targeted');
+	const touch = { collection: 'pages', action: 'update' as const, fields: ['title', 'body'], keys: [] };
+	assert.equal(skipReason(touch as any, { ...DEFAULT_RULE, update: false }), "Changed in pages (rule: don't clear on update)");
+	assert.equal(skipReason({ ...touch, fields: ['views_count'] } as any, { ...DEFAULT_RULE, skipFields: ['views_count'] }), 'Only views_count changed in pages');
+});

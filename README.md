@@ -14,8 +14,8 @@ Measured on a website-like setup, see [Performance](#performance).
 - **Granular Cache**: a change clears only the cached responses that use the changed collection, including through relations. Works for REST and GraphQL.
 - **Clear single items** (advanced): a change to one item keeps the cached single-item responses of all other items.
 - **Rules per collection**: choose which changes clear, ignore fields like a view counter, and set a lifetime per collection.
-- **Analysis**: which collections cleared the whole cache how often, with suggestions.
-- **Statistics**: what each change cleared, the cache size and the last 24 hours.
+- **Analysis**: which collections change how often, with suggested rules.
+- **Statistics**: what each change cleared, the cache size, what a change to each collection clears, and the last 24 hours.
 - **Cache settings in the Data Studio**: Auto Purge, Skip Cache and the cache lifetime, applied without a restart.
 - **Several Directus servers**: with a Redis cache, all servers share what to clear and pick up saved settings.
 - **Export and import** of all settings.
@@ -33,13 +33,13 @@ That's all. Every change now clears only the cached responses that use the chang
 
 Directus 9.26 to 12.x (tested with 9.26, 10.13, 11.7, 11.17 and 12.5).
 
-**Marketplace:** search for **Cache Manager** in **Settings → Marketplace**. The extension has API parts, which some Directus setups don't allow from the Marketplace. Then install it manually.
+**Marketplace:** search for **Cache Manager** in **Settings → Marketplace**. The extension has API parts, which some Directus setups don't allow from the Marketplace. If it isn't listed there, install it manually.
 
 **Manual:** run `npm install directus-extension-cache-manager`, copy `package.json` and the `dist` folder into `extensions/directus-extension-cache-manager` of your Directus, and restart Directus.
 
 Then enable **Cache Manager** in **Settings → Project Settings → Modules**.
 
-**Restart Directus after every install or update.** Granular Cache only starts with Directus; until then, the page shows a notice.
+**Restart Directus after every install or update.** Granular mode only starts when Directus starts; until then, the page shows a notice.
 
 ## Granular Cache
 
@@ -72,19 +72,31 @@ Prefer a small rule over "never clear". Never clearing `videos` because of a vie
 
 <img alt="Cache Manager — Analysis" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/analysis.png" width="800" />
 
-Reads the Directus activity log and shows, for the last hour up to the last 7 days, how often changes cleared the whole cache and which collections caused it.
+Reads the Directus activity log for the last hour up to the last 7 days and lists the collections by how often they changed.
+
+**In Granular mode**, a change only clears the responses of its own collection, so the page helps with busy collections:
+
+- **Potential**: most changes to this collection only touch the same few fields, such as a view counter. With a rule that has these Skip Fields, this share of its changes keeps the cache.
+- **Add Suggested Rule** adds that rule; **Add Rule** adds one with default settings. Both open it on **Granular Cache** for a check before saving.
+- **Cache rule** in the Status column: the collection has a rule that keeps some of its changes. **Clears everything**: users, roles, permissions, settings and the data model still clear the whole cache.
+
+**In Global mode**, every change clears the whole cache. The page shows how often that happened and suggests collections that should never clear:
 
 - **Suggested**: collections that change at least 3 times per hour, mostly not by editors. **Apply Suggested** adds a rule that never clears for them.
 - **Check impact** marks names like subscriptions, payments or access, which apps may need up to date.
 - Select collections and click **Never Clear Selected**, or **Clear Again** to undo.
 
-Collections with activity tracking turned off (**Not measured**) and some Flows can't be counted. Works with PostgreSQL and MySQL.
+Collections with activity tracking turned off show **Not measured**. Changes that aren't in the activity log, such as some Flows or imports, can't be counted; the page names collections where it saw more changes than the log has since Directus started. Works with PostgreSQL and MySQL.
 
 ## Statistics
 
 <img alt="Cache Manager — Statistics" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/statistics.png" width="800" />
 
-What happened since Directus started: global cache clears, granular clears, changes a rule kept, and the latest events with their reason. With the cache in memory, also the cache size, the largest collections and charts for the last 24 hours. The numbers reset when Directus restarts.
+What happened since Directus started: global cache clears, granular clears, changes a rule kept, and the latest events with their reason. The numbers reset when Directus restarts.
+
+- **Cache Size** (cache in memory): size, number of cached responses, the largest size in the last 24 hours, and expired responses deleted.
+- **What a Change Clears**: per collection, the cached responses that use it, and their share of the cache. A change to the collection clears them. A response that uses several collections counts in each row, so the rows add up to more than the total. **Kept**: the collection never clears.
+- **Last 24 Hours**: changes per hour by result, and with the cache in memory the cache size per hour.
 
 ## Settings on Status
 
@@ -100,10 +112,10 @@ Saved settings apply right away and survive a restart. **Reset to Configured Val
 ## Good to Know
 
 - **Apps that need fresh data** right away, e.g. an access check after a purchase, can send `Cache-Control: no-store` (with **Skip Cache** on).
-- **Several Directus servers** need the cache in Redis. Cache Manager then keeps its notes there too: a change on any server clears what any server cached, and saved settings reach all servers within about 10 seconds. Statistics count per server.
+- **Several Directus servers** need the cache in Redis. Cache Manager then keeps its list of what each response uses there too: a change on any server clears what any server cached, and saved settings reach all servers within about 10 seconds. Statistics count per server.
 - **Saving clears the cache once**, because it writes to the project settings.
 - **Expired responses in memory**: Directus only deletes an expired response when it is requested again. Cache Manager deletes them about once a minute, so the cache doesn't fill up with them. Not needed with Redis.
-- **If a future Directus version doesn't fit**, the page says so and Directus clears the whole cache as usual.
+- **If a future Directus version isn't supported**, the page says so and Directus clears the whole cache as usual.
 - **Responses Cache Manager can't trace**, such as GraphQL `server_info` or custom endpoints, are cleared on every change, as in Directus.
 - **Earlier versions** had an Ignore List page. Its entries become rules that never clear on the first start.
 
@@ -119,7 +131,7 @@ Directus 11.17 with Postgres and the cache in memory, on a website-like setup: 2
 | Database queries | 31,422 | **762** | **−98 %** |
 | Database CPU time | 8.7 s | **0.6 s** | **−93 %** |
 
-If visits are counted in a field on the pages (`views_count`), add the rule Skip Fields `views_count`. The results are then the same.
+If visits are counted in a field on the pages (`views_count`), add a rule with Skip Fields `views_count`. The results are then the same as above.
 
 ### Two Directus servers with Redis
 

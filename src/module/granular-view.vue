@@ -133,6 +133,9 @@
 				<div class="toolbar">
 					<v-notice type="info" class="toolbar-notice">
 						Collections without a rule clear on every change and use the global lifetime ({{ formatDurationLabel(data.globalTtl) }}).
+						<template v-if="ignoredWithoutRule.length">
+							Except {{ ignoredWithoutRule.join(', ') }}: on the ignore list in the Directus configuration, so they never clear.
+						</template>
 					</v-notice>
 					<div class="add-rule">
 						<v-select :model-value="null" :items="addChoices" :disabled="!addChoices.length" placeholder="Add a rule for…" @update:model-value="onAdd" />
@@ -262,6 +265,8 @@ const shownNames = computed(() => {
 	);
 });
 const ignored = computed(() => new Set(data.value?.ignoreList ?? []));
+/** Ignore-list collections (Directus configuration) without a rule: they never clear but have no row here. */
+const ignoredWithoutRule = computed(() => [...ignored.value].filter((name) => !draft.collections[name]).sort());
 const addChoices = computed(() =>
 	(data.value?.collections ?? [])
 		.filter((entry) => entry.targetable && !draft.collections[entry.name])
