@@ -95,7 +95,7 @@ Collections with activity tracking turned off show **Not measured**. Changes tha
 What happened since Directus started: global cache clears, granular clears, changes a rule kept, and the latest events with their reason. The numbers reset when Directus restarts.
 
 - **Cache Size** (cache in memory): size, number of cached responses, the largest size in the last 24 hours, and expired responses deleted.
-- **What a Change Clears**: per collection, the cached responses that use it, and their share of the cache. A change to the collection clears them. A response that uses several collections counts in each row, so the rows add up to more than the total. **Kept**: the collection never clears.
+- **What a Change Clears**: per collection, the cached responses that use it, their share of the cache, and how often the collection changes. A change to the collection clears them, so shorter bars are better; a long bar with many changes per hour empties the cache often. A response that uses several collections counts in each row, so the rows add up to more than the total. **Kept**: the collection never clears.
 - **Last 24 Hours**: changes per hour by result, and with the cache in memory the cache size per hour.
 
 ## Settings on Status

@@ -2,7 +2,7 @@
 	"name": "directus-extension-cache-manager",
 	"description": "Granular cache for Directus: a change clears only the cached responses that use its collection. Rules per collection, Skip Fields, statistics, change analysis, and cache settings without a restart.",
 	"icon": "cached",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"license": "MIT",
 	"keywords": [
 		"directus",

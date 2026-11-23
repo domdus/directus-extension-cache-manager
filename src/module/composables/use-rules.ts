@@ -21,6 +21,8 @@ export type RulesStatus = {
 	size: { entries: number; bytes: number; expired: number; expiredBytes: number } | null;
 	swept: { entries: number; bytes: number };
 	bytesByCollection: Record<string, number>;
+	/** Items written per collection since Directus started (this server). */
+	liveWrites?: Record<string, number>;
 	history: Array<{ hour: string; full: number; targeted: number; skipped: number; entries: number | null; bytes: number | null }>;
 };
 

@@ -171,16 +171,22 @@
 				<div v-if="largest.length" class="largest">
 					<span class="label">What a Change Clears</span>
 					<p class="explain">
-						The cached responses that use each collection. A change to the collection clears them. A response that uses
-						several collections is in each of their rows, so the rows add up to more than the total.
+						Shorter is better: bar and % show how much of the cache a change to the collection clears. A long bar with many
+						changes per hour (orange) empties the cache often. A response that uses several collections counts in each of
+						their rows, so the rows add up to more than 100 %.
 					</p>
 					<div v-for="row in largest" :key="row.name" class="largest-row">
 						<span class="largest-name">{{ row.name }}</span>
 						<span class="largest-bar" :class="{ 'largest-bar--kept': row.kept }"><span :style="{ inlineSize: `${row.bar * 100}%` }" /></span>
-						<span class="largest-count">
-							{{ formatNumber(row.count) }}<template v-if="row.total"> of {{ formatNumber(row.total) }}</template>
-							{{ (row.total || row.count) === 1 ? 'response' : 'responses' }}
+						<span
+							v-tooltip="`${changesLabel} since Directus started (${new Date(data.status.since).toLocaleString()})${data.status.shared ? ', counted on this server' : ''}.`"
+							class="largest-rate"
+							:class="{ 'largest-rate--busy': !row.kept && row.rate.perHour && row.rate.value >= BUSY_PER_HOUR }"
+						>
+							<template v-if="row.rate.perHour">{{ row.rate.value < 1 ? '<1' : formatNumber(Math.round(row.rate.value)) }} changes/h</template>
+							<template v-else>{{ formatNumber(row.rate.value) }} {{ row.rate.value === 1 ? 'change' : 'changes' }}</template>
 						</span>
+						<span class="largest-count">{{ formatNumber(row.count) }} {{ row.count === 1 ? 'response' : 'responses' }}</span>
 						<span class="largest-value">{{ row.bytes === null ? '' : formatBytes(row.bytes) }}</span>
 						<span
 							v-if="row.kept"
@@ -355,9 +361,30 @@ const largest = computed(() => {
 	return rows.map((row) => {
 		const value = bySize ? row.bytes! : row.count;
 		const share = totalOf > 0 ? Math.min(1, value / totalOf) : null;
-		return { ...row, kept: kept.has(row.name), share, bar: share ?? value / top };
+		return { ...row, kept: kept.has(row.name), share, bar: share ?? value / top, rate: changesPerHour(row.name) };
 	});
 });
+
+/** From this many changes per hour, a long bar means the cache is cleared often: the rate is highlighted. */
+const BUSY_PER_HOUR = 3;
+
+/** A rate needs at least an hour of data; before that, a few changes would look like a high rate. */
+const RATE_AFTER_MINUTES = 60;
+
+function minutesSinceStart(): number {
+	const since = data.value?.status.since;
+	return since ? (Date.now() - new Date(since).getTime()) / 60_000 : 0;
+}
+
+const changesLabel = computed(() => (minutesSinceStart() >= RATE_AFTER_MINUTES ? 'Changes per hour' : 'Changes'));
+
+/** Changes per hour since Directus started, or the plain count during the first hour. */
+function changesPerHour(collection: string): { perHour: boolean; value: number } {
+	const count = data.value?.status.liveWrites?.[collection] ?? 0;
+	const minutes = minutesSinceStart();
+	if (minutes < RATE_AFTER_MINUTES) return { perHour: false, value: count };
+	return { perHour: true, value: count / (minutes / 60) };
+}
 
 /** Responses tagged "*" (dependencies unknown): every change clears them. */
 const untraced = computed(() => {
@@ -593,7 +620,7 @@ th {
 }
 .largest-row {
 	display: grid;
-	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 10rem 5rem 3rem;
+	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 8rem 9rem 5rem 3rem;
 	align-items: center;
 	gap: 12px;
 	padding: 4px 0;
@@ -606,9 +633,13 @@ th {
 	}
 	.largest-name {
 		grid-row: 1;
-		grid-column: 1 / 3;
+		grid-column: 1;
 		white-space: normal;
 		overflow-wrap: anywhere;
+	}
+	.largest-rate {
+		grid-row: 1;
+		grid-column: 2;
 	}
 	.largest-share {
 		grid-row: 1;
@@ -642,7 +673,19 @@ th {
 	border-radius: 0 4px 4px 0;
 	background: var(--theme--primary, var(--primary));
 }
+.largest-rate {
+	cursor: pointer;
+	white-space: nowrap;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.largest-rate--busy {
+	color: var(--theme--warning, var(--warning));
+	font-weight: 600;
+}
 .largest-count {
+	white-space: nowrap;
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
