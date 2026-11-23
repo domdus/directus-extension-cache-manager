@@ -450,6 +450,11 @@ td.center :deep(.v-checkbox) {
 	overflow-wrap: anywhere;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
+th.fields-col,
+th.ttl-col {
+	cursor: pointer;
+}
+
 .fields-col {
 	width: auto;
 	min-width: 0;

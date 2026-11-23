@@ -199,10 +199,10 @@ function summary(value: Value | null | undefined): string {
 	--v-chip-background-color: var(--theme--primary-background, var(--primary-alt));
 	--v-chip-color-hover: var(--theme--primary, var(--primary));
 	--v-chip-background-color-hover: var(--theme--primary-subdued, var(--primary-alt));
-	cursor: help;
+	cursor: pointer;
 }
 .chips .more {
-	cursor: help;
+	cursor: pointer;
 }
 .empty {
 	font-size: 13px;
@@ -252,7 +252,7 @@ function summary(value: Value | null | undefined): string {
 	color: var(--theme--primary, var(--primary));
 	border-color: var(--theme--primary-subdued, var(--primary-alt));
 	background: var(--theme--primary-background, var(--primary-alt));
-	cursor: help;
+	cursor: pointer;
 }
 .tag-in-use .tag-label {
 	color: inherit;

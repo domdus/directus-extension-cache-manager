@@ -102,11 +102,6 @@
 						</span>
 					</div>
 				</section>
-				<p v-if="data.status.targetedActive" class="meta">
-					<template v-if="data.status.indexed >= 0">{{ formatNumber(data.status.indexed) }} cached responses right now.</template>
-					<template v-else>Shared by all Directus servers through Redis.</template>
-					<template v-if="topCollections.length">{{ ' ' }}Most cached: {{ topCollections.join(', ') }}.</template>
-				</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="memory" /></template>
@@ -121,6 +116,18 @@
 								Size
 								<v-icon
 									v-tooltip.top="`${formatNumber(data.status.size.entries)} ${data.status.size.entries === 1 ? 'entry' : 'entries'}. Node.js needs a little more memory on top. A small cache after many global cache clears means it is rebuilt all the time.`"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+						<div v-if="data.status.targetedActive && data.status.indexed >= 0" class="stat">
+							<span class="stat-value">{{ formatNumber(data.status.indexed) }}</span>
+							<span class="stat-label">
+								Cached Responses
+								<v-icon
+									v-tooltip.top="'API responses in the cache right now.'"
 									name="help_outline"
 									small
 									class="stat-info"
@@ -152,21 +159,25 @@
 							</span>
 						</div>
 					</section>
-					<div v-if="largest.length" class="largest">
-						<span class="label">Largest Collections</span>
-						<p class="explain">A response that uses several collections counts for each of them.</p>
-						<div v-for="row in largest" :key="row.name" class="largest-row">
-							<span class="largest-name">{{ row.name }}</span>
-							<span class="largest-bar"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
-							<span class="largest-value">{{ formatBytes(row.bytes) }}</span>
-						</div>
-					</div>
-					<p v-else-if="!data.status.targetedActive" class="meta">Size per collection is shown in Granular mode only.</p>
+					<p v-if="!largest.length && !data.status.targetedActive" class="meta">Size per collection is shown in Granular mode only.</p>
 				</template>
 				<p v-else class="explain intro">
 					<template v-if="data.status.store === 'memory'">No size while the cache is off.</template>
-					<template v-else>The size is shown only for a cache in memory (CACHE_STORE=memory). This Directus uses {{ data.status.store }}.</template>
+					<template v-else>
+						The size is shown only for a cache in memory (CACHE_STORE=memory). This Directus uses {{ data.status.store }},
+						shared by all Directus servers.
+					</template>
 				</p>
+				<div v-if="largest.length" class="largest">
+					<span class="label">{{ data.status.size ? 'Largest Collections' : 'Most Cached Collections' }}</span>
+					<p class="explain">A response that uses several collections counts for each of them.</p>
+					<div v-for="row in largest" :key="row.name" class="largest-row">
+						<span class="largest-name">{{ row.name }}</span>
+						<span class="largest-bar"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
+						<span class="largest-count">{{ formatNumber(row.count) }} {{ row.count === 1 ? 'response' : 'responses' }}</span>
+						<span class="largest-value">{{ row.bytes === null ? '' : formatBytes(row.bytes) }}</span>
+					</div>
+				</div>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="bar_chart" /></template>
@@ -248,13 +259,6 @@ const peakBytes = computed(() => {
 	return values.length ? Math.max(...values) : null;
 });
 
-const topCollections = computed(() =>
-	Object.entries(data.value?.status.indexedByCollection ?? {})
-		.filter(([name]) => name !== '*')
-		.sort((a, b) => b[1] - a[1])
-		.slice(0, 5)
-		.map(([name, count]) => `${name} (${formatNumber(count)})`),
-);
 
 const COLORS = {
 	full: 'var(--theme--warning, var(--warning))',
@@ -302,13 +306,18 @@ const sizeColumns = computed<BarColumn[]>(() =>
 	})),
 );
 
+/** Collections by cache size (memory store), or by number of cached responses when the size can't be measured (Redis). */
 const largest = computed(() => {
-	const rows = Object.entries(data.value?.status.bytesByCollection ?? {})
-		.filter(([name]) => name !== '*')
-		.sort((a, b) => b[1] - a[1])
+	const counts = data.value?.status.indexedByCollection ?? {};
+	const bytes = data.value?.status.bytesByCollection ?? {};
+	const bySize = Object.keys(bytes).length > 0;
+	const rows = Object.keys(bySize ? bytes : counts)
+		.filter((name) => name !== '*')
+		.map((name) => ({ name, count: counts[name] ?? 0, bytes: bySize ? (bytes[name] ?? 0) : null }))
+		.sort((a, b) => (bySize ? b.bytes! - a.bytes! : b.count - a.count))
 		.slice(0, 8);
-	const top = rows[0]?.[1] || 1;
-	return rows.map(([name, bytes]) => ({ name, bytes, share: bytes / top }));
+	const top = (bySize ? rows[0]?.bytes : rows[0]?.count) || 1;
+	return rows.map((row) => ({ ...row, share: (bySize ? row.bytes! : row.count) / top }));
 });
 
 function times(count: number): string {
@@ -493,7 +502,7 @@ th {
 }
 .largest-row {
 	display: grid;
-	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 6rem;
+	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 8rem 5rem;
 	align-items: center;
 	gap: 12px;
 	padding: 4px 0;
@@ -513,11 +522,17 @@ th {
 	border-radius: 0 4px 4px 0;
 	background: var(--theme--primary, var(--primary));
 }
+.largest-count {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
 .largest-value {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 }
 .count {
+	cursor: pointer;
 	margin-left: 6px;
 	padding: 0 6px;
 	border-radius: 10px;

@@ -1,7 +1,7 @@
 import { defineEndpoint } from '@directus/extensions-sdk';
 import type { NextFunction, Request, Response } from 'express';
 import { buildAnalysis, isRecommendable, parseHours, toBuckets, type Analysis } from '../shared/analysis';
-import { activityRetentionHours, unmeasuredCollections } from '../shared/coverage';
+import { activityRetentionHours, liveGaps, unmeasuredCollections } from '../shared/coverage';
 import { parseDuration } from '../shared/duration';
 import { DEFAULT_HOURS, EXTENSION_ID, LOG_PREFIX, MAX_HOURS, RECOMMEND_MIN_SHARE, WRITE_ACTIONS } from '../shared/constants';
 import { AUTO_SPECIALS, SKIP_SAMPLE_SIZE, changedFields, suggestSkipFields, type SkipSuggestion } from '../shared/skip-fields';
@@ -19,7 +19,7 @@ import {
 	writeStored,
 	type ApiContext,
 } from '../api/state';
-import { applyRules, statusWithFreshSize } from '../api/targeted';
+import { applyRules, runtimeStatus, statusWithFreshSize } from '../api/targeted';
 import { rememberSaved } from '../api/sync';
 import { DEFAULT_RULES, describeRules, isTargetable, neverClearCollections, validateRules } from '../shared/rules';
 
@@ -195,6 +195,20 @@ export default defineEndpoint({
 					unmeasured: unmeasuredCollections(schema.collections ?? {}),
 					activityRetentionHours: activityRetentionHours(env['RETENTION_ENABLED'], parseDuration(env['ACTIVITY_RETENTION'])),
 				});
+				try {
+					const live = runtimeStatus(env);
+					const logged = await database('directus_activity')
+						.select('collection')
+						.count({ total: '*' })
+						.where('timestamp', '>=', new Date(live.since))
+						.whereIn('action', WRITE_ACTIONS)
+						.whereNotNull('collection')
+						.groupBy('collection');
+					result.liveSince = live.since;
+					result.liveGaps = liveGaps(live.liveWrites ?? {}, Object.fromEntries(logged.map((row: any) => [String(row.collection), Number(row.total)])));
+				} catch (error) {
+					ctx.logger.warn(`${LOG_PREFIX} live check failed: ${(error as Error)?.message ?? error}`);
+				}
 				try {
 					result.skipSuggestions = await skipSuggestions(result, schema, from);
 				} catch (error) {

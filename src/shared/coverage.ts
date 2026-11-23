@@ -80,3 +80,22 @@ export function retentionWarning(retentionHours: number | null, windowHours: num
 	if (retentionHours === null || retentionHours >= windowHours) return null;
 	return `Directus only keeps ${retentionText(retentionHours)} of activity. "Last ${formatWindow(windowHours)}" shows less than actually happened.`;
 }
+
+export type LiveGap = { collection: string; live: number; logged: number };
+
+/** At least this many unlogged items before a collection is named (a few can be timing at the window edge). */
+const GAP_MIN_ITEMS = 3;
+
+/**
+ * Collections that changed more often than the activity log shows, since this Directus process started: Flows or
+ * scripts that write without activity tracking, or collections with tracking off. Directus system collections are
+ * left out: Directus writes its own activity and revisions without logging them. With several Directus servers each
+ * counts only its own writes, so gaps on the others stay unseen (never a false alarm).
+ */
+export function liveGaps(live: Record<string, number>, logged: Record<string, number>): LiveGap[] {
+	return Object.entries(live)
+		.filter(([collection]) => !collection.startsWith('directus_'))
+		.map(([collection, count]) => ({ collection, live: count, logged: logged[collection] ?? 0 }))
+		.filter((gap) => gap.live - gap.logged >= Math.max(GAP_MIN_ITEMS, gap.live * 0.2))
+		.sort((a, b) => b.live - b.logged - (a.live - a.logged) || a.collection.localeCompare(b.collection));
+}

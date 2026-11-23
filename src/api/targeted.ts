@@ -89,6 +89,8 @@ export type RuntimeStatus = {
 	bytesByCollection: Record<string, number>;
 	/** The last 24 hours, oldest first. */
 	history: HistoryBucket[];
+	/** Items written per collection since this process started, counted live (with or without activity tracking). */
+	liveWrites: Record<string, number>;
 };
 
 type Runtime = {
@@ -109,6 +111,7 @@ type Runtime = {
 	recent: ClearEvent[];
 	swept: SweepResult;
 	history: HistoryBucket[];
+	liveWrites: Map<string, number>;
 	/**
 	 * With a Redis cache: the index and the clear counters live in Redis, so every Directus server sees what the others
 	 * stored (horizontal scaling). null with the memory store, where each process has its own cache anyway.
@@ -207,6 +210,7 @@ function freshRuntime(): Runtime {
 		recent: [],
 		swept: { entries: 0, bytes: 0 },
 		history: [],
+		liveWrites: new Map(),
 		expiry: new ExpiryQueue(),
 		shared: null,
 		sharedCounts: {},
@@ -278,6 +282,16 @@ export function fieldsOf(method: string, args: unknown[], primaryKey: string | u
 	return fields;
 }
 
+/**
+ * Items one write call adds to the live count, like the activity log counts them (one entry per item). Only the inner
+ * methods count: createMany, updateBatch and upsertMany call createOne and updateMany per item.
+ */
+export function writtenItems(method: string, keys: string[] | null): number {
+	if (method === 'createOne') return 1;
+	if (method === 'updateMany' || method === 'deleteMany') return keys?.length || 1;
+	return 0;
+}
+
 /** Items a write changes, from the method's arguments: [] when it only creates, null when it can't tell. */
 export function keysOf(method: string, args: unknown[], primaryKey: string | undefined): string[] | null {
 	const list = (value: unknown) => (Array.isArray(value) ? value : [value]).filter((key) => key !== undefined && key !== null).map(String);
@@ -320,7 +334,10 @@ export function patchItemsService(ItemsService: any, rt = runtime()): string[] {
 			for (let up = ctx.parent; up; up = up.parent) up.touched.push({ collection: ctx.collection, action: ctx.action, fields: ctx.fields, keys: ctx.keys });
 			return rt.writeContext.run(ctx, async () => {
 				try {
-					return await original.apply(this, args);
+					const result = await original.apply(this, args);
+					const items = writtenItems(method, ctx.keys);
+					if (items) rt.liveWrites.set(ctx.collection, (rt.liveWrites.get(ctx.collection) ?? 0) + items);
+					return result;
 				} finally {
 					ctx.done = true;
 				}
@@ -900,6 +917,7 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		swept: { ...rt.swept },
 		bytesByCollection: foldItemTags(rt.index.bytes()),
 		history: lastDay(rt),
+		liveWrites: Object.fromEntries(rt.liveWrites),
 	};
 }
 

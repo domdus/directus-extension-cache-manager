@@ -120,7 +120,7 @@ const maxLabel = computed(() => props.format(max.value));
 	min-width: 0;
 	display: flex;
 	align-items: flex-end;
-	cursor: default;
+	cursor: pointer;
 }
 .column:hover {
 	background: var(--theme--background-subdued, var(--background-subdued));

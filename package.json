@@ -1,8 +1,8 @@
 {
 	"name": "directus-extension-cache-manager",
-	"description": "Find the collections that clear the Directus cache, exclude them so cached answers last longer, and change auto-purge, cache bypass, and cache lifetime at runtime without a restart",
+	"description": "Granular cache for Directus: a change clears only the cached responses that use its collection. Rules per collection, Skip Fields, statistics, change analysis, and cache settings without a restart.",
 	"icon": "cached",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"license": "MIT",
 	"keywords": [
 		"directus",
@@ -12,7 +12,8 @@
 		"cache-manager",
 		"cache-purge",
 		"auto-purge",
-		"ignore-list",
+		"granular-cache",
+		"cache-invalidation",
 		"cache-ttl",
 		"ttl",
 		"purge",

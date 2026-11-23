@@ -1,4 +1,5 @@
 import type { SkipSuggestion } from './skip-fields';
+import type { LiveGap } from './coverage';
 import { EDITOR_SHARE_MAX, RECOMMEND_MIN_SHARE, RECOMMENDABLE_SYSTEM_COLLECTIONS } from './constants';
 
 /** One row of the SQL aggregate: writes to a collection within one minute of the window. */
@@ -52,6 +53,9 @@ export type Analysis = {
 	activityRetentionHours: number | null;
 	/** Busy collections whose changes mostly touch the same few fields (filled in by the endpoint). */
 	skipSuggestions?: SkipSuggestion[];
+	/** Collections that changed more often than the activity log shows, since liveSince (filled in by the endpoint). */
+	liveGaps?: LiveGap[];
+	liveSince?: string;
 };
 
 export type MinuteSets = Map<string, Set<number>>;
