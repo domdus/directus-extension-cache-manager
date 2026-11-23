@@ -258,10 +258,16 @@
 								/>
 							</td>
 							<td class="name">{{ row.collection }}</td>
-							<td class="num">{{ row.measured ? formatNumber(row.writes) : '–' }}</td>
-							<td class="num">{{ row.measured ? formatMinutesShort(row.minutes, analysis.windowMinutes) : '–' }}</td>
-							<td v-if="!granular" class="num">{{ row.ignored || !row.measured ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
-							<td>
+							<td class="num" data-label="Changes">{{ row.measured ? formatNumber(row.writes) : '–' }}</td>
+							<td class="num" data-label="Changed in">
+								<template v-if="row.measured">
+									<span class="minutes">{{ changedIn(row)[0] }}</span>
+									<span class="rate">{{ changedIn(row)[1] }}</span>
+								</template>
+								<template v-else>–</template>
+							</td>
+							<td v-if="!granular" class="num" data-label="If Never Cleared">{{ row.ignored || !row.measured ? '–' : formatSavedPerHour(row.savedMinutes, analysis.windowMinutes) }}</td>
+							<td data-label="Status">
 								<span
 									v-tooltip="stateTooltip(row)"
 									class="state"
@@ -270,13 +276,13 @@
 									{{ ruleOf(row) ? 'Cache rule' : ROW_STATE_LABELS[stateOf(row)] }}
 								</span>
 							</td>
-							<td v-if="granular" class="num">
+							<td v-if="granular" class="num" data-label="Potential">
 								<span v-if="skipFor(row.collection)" v-tooltip="skipTooltip(skipFor(row.collection)!)" class="potential">
 									{{ Math.round(skipFor(row.collection)!.coveredShare * 100) }} %
 								</span>
 								<span v-else class="subdued">–</span>
 							</td>
-							<td>
+							<td class="action-col" :data-label="granular ? 'Rule' : 'Suggestion'">
 								<v-button
 									v-if="!row.measured && !row.ignored"
 									v-tooltip="`Settings → Data Model → ${row.collection} → Activity & Revision Tracking`"
@@ -442,6 +448,12 @@ function neverClearSelected() {
 function clearAgainSelected() {
 	clearAgain(changes.value.toClear);
 	selected.value = [];
+}
+
+/** "Changed in" as two lines: minutes, then the rate per hour. */
+function changedIn(row: TableRow): [string, string] {
+	const [minutes = '', rate = ''] = formatMinutesShort(row.minutes, analysis.value?.windowMinutes ?? 0).split(' · ');
+	return [minutes, rate];
 }
 
 function stateOf(row: TableRow): RowState {
@@ -780,6 +792,7 @@ onMounted(async () => {
 	margin-top: 12px;
 }
 .table-wrap {
+	container: changes / inline-size;
 	overflow: auto;
 	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 	border-radius: var(--theme--border-radius, var(--border-radius));
@@ -811,6 +824,78 @@ th {
 }
 .name {
 	font-family: var(--theme--fonts--monospace--font-family, var(--family-monospace, monospace));
+	overflow-wrap: anywhere;
+}
+.minutes,
+.rate {
+	display: block;
+	white-space: nowrap;
+}
+.rate {
+	font-size: 12px;
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
+}
+.action-col :deep(.v-button) {
+	max-inline-size: 100%;
+}
+/* Narrow: each row becomes a small card, each value with its column name. */
+@container changes (max-width: 640px) {
+	thead {
+		display: none;
+	}
+	table,
+	tbody {
+		display: block;
+	}
+	tbody tr {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 16px;
+		padding: 10px 12px;
+		border-bottom: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	}
+	tbody tr:last-child {
+		border-bottom: none;
+	}
+	tbody td,
+	tbody td.num {
+		display: block;
+		padding: 0;
+		border: none;
+		text-align: left;
+	}
+	tbody td.check-col {
+		flex: 0 0 auto;
+		inline-size: auto;
+		padding: 0;
+	}
+	tbody td.name {
+		flex: 1 1 calc(100% - 48px);
+		font-weight: 600;
+	}
+	tbody td[data-label] {
+		flex: 1 1 6rem;
+	}
+	tbody td[data-label]::before {
+		content: attr(data-label);
+		display: block;
+		margin-bottom: 2px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	}
+	/* No suggestion or button: leave the field out instead of showing an empty label. */
+	tbody td.action-col:not(:has(.v-button, .badge, .subdued)),
+	tbody td[data-label='Potential']:not(:has(.potential)) {
+		display: none;
+	}
+	.minutes,
+	.rate {
+		display: inline;
+	}
+	.rate::before {
+		content: ' · ';
+	}
 }
 .check-col {
 	width: 36px;

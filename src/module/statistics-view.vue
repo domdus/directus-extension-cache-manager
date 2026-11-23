@@ -176,13 +176,20 @@
 					</p>
 					<div v-for="row in largest" :key="row.name" class="largest-row">
 						<span class="largest-name">{{ row.name }}</span>
-						<span class="largest-bar"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
+						<span class="largest-bar" :class="{ 'largest-bar--kept': row.kept }"><span :style="{ inlineSize: `${row.share * 100}%` }" /></span>
 						<span class="largest-count">
 							{{ formatNumber(row.count) }}<template v-if="row.total"> of {{ formatNumber(row.total) }}</template>
 							{{ (row.total || row.count) === 1 ? 'response' : 'responses' }}
 						</span>
 						<span class="largest-value">{{ row.bytes === null ? '' : formatBytes(row.bytes) }}</span>
-						<span class="largest-share">{{ Math.round(row.share * 100) }} %</span>
+						<span
+							v-if="row.kept"
+							v-tooltip="'Its changes never clear the cache (a never-clear rule or CACHE_AUTO_PURGE_IGNORE_LIST). The size is what a change would clear without it.'"
+							class="largest-share largest-share--kept"
+						>
+							Kept
+						</span>
+						<span v-else class="largest-share">{{ Math.round(row.share * 100) }} %</span>
 					</div>
 				</div>
 
@@ -214,11 +221,11 @@
 						<tbody>
 							<tr v-for="(event, i) in events" :key="i">
 								<td class="time">{{ new Date(event.at).toLocaleTimeString() }}</td>
-								<td>
+								<td class="what">
 									{{ event.reason }}
 									<span v-if="event.count > 1" v-tooltip="`${event.count} times in the same second`" class="count">×{{ event.count }}</span>
 								</td>
-								<td>
+								<td class="result-col">
 									<span class="result" :class="`result--${event.kind}`">{{ resultText(event) }}</span>
 								</td>
 							</tr>
@@ -239,6 +246,7 @@ import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 import { emptiedEveryLabel, sizeVsClearsText } from '../shared/health';
 import { groupEvents, type GroupedEvent } from '../shared/events';
+import { neverClearCollections } from '../shared/rules';
 import { formatBytes, formatNumber } from '../shared/format';
 
 const pageClass = usePageClass();
@@ -329,7 +337,8 @@ const largest = computed(() => {
 		.map((name) => ({ name, count: counts[name] ?? 0, total, bytes: bySize ? (bytes[name] ?? 0) : null }))
 		.sort((a, b) => (bySize ? b.bytes! - a.bytes! : b.count - a.count))
 		.slice(0, 8);
-	return rows.map((row) => ({ ...row, share: totalOf > 0 ? Math.min(1, (bySize ? row.bytes! : row.count) / totalOf) : 0 }));
+	const kept = new Set([...(data.value?.ignoreList ?? []), ...(data.value ? neverClearCollections(data.value.config) : [])]);
+	return rows.map((row) => ({ ...row, kept: kept.has(row.name), share: totalOf > 0 ? Math.min(1, (bySize ? row.bytes! : row.count) / totalOf) : 0 }));
 });
 
 function times(count: number): string {
@@ -447,6 +456,7 @@ onUnmounted(() => {
 	flex-shrink: 0;
 }
 .table-wrap {
+	container: events / inline-size;
 	overflow: auto;
 	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 	border-radius: var(--theme--border-radius, var(--border-radius));
@@ -480,6 +490,47 @@ th {
 .result {
 	white-space: nowrap;
 }
+.what {
+	overflow-wrap: anywhere;
+}
+/* Narrow: time and result on one line, what happened below. */
+@container events (max-width: 560px) {
+	thead {
+		display: none;
+	}
+	table,
+	tbody {
+		display: block;
+	}
+	tbody tr {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 2px 12px;
+		padding: 8px 12px;
+		border-bottom: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
+	}
+	tbody tr:last-child {
+		border-bottom: none;
+	}
+	tbody td {
+		padding: 0;
+		border: none;
+	}
+	tbody td.time {
+		grid-row: 1;
+		grid-column: 1;
+		color: var(--theme--foreground-subdued, var(--foreground-subdued));
+	}
+	tbody td.result-col {
+		grid-row: 1;
+		grid-column: 2;
+		text-align: right;
+	}
+	tbody td.what {
+		grid-row: 2;
+		grid-column: 1 / -1;
+	}
+}
 .result--full {
 	color: var(--theme--warning, var(--warning));
 }
@@ -500,6 +551,7 @@ th {
 	}
 }
 .largest {
+	container: largest / inline-size;
 	margin-top: 16px;
 	padding: 16px 18px;
 	border-radius: var(--theme--border-radius, var(--border-radius));
@@ -518,6 +570,35 @@ th {
 	align-items: center;
 	gap: 12px;
 	padding: 4px 0;
+}
+/* Narrow: name and share on the first line, bar and numbers on the second. */
+@container largest (max-width: 560px) {
+	.largest-row {
+		grid-template-columns: minmax(0, 1fr) auto auto;
+		gap: 4px 12px;
+	}
+	.largest-name {
+		grid-row: 1;
+		grid-column: 1 / 3;
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+	.largest-share {
+		grid-row: 1;
+		grid-column: 3;
+	}
+	.largest-bar {
+		grid-row: 2;
+		grid-column: 1;
+	}
+	.largest-count {
+		grid-row: 2;
+		grid-column: 2;
+	}
+	.largest-value {
+		grid-row: 2;
+		grid-column: 3;
+	}
 }
 .largest-name {
 	overflow: hidden;
@@ -547,6 +628,14 @@ th {
 
 .largest-share {
 	font-weight: 600;
+}
+.largest-share--kept {
+	cursor: pointer;
+	color: var(--theme--success, var(--success));
+}
+.largest-bar--kept span {
+	background: var(--theme--foreground-subdued, var(--foreground-subdued));
+	opacity: 0.5;
 }
 .count {
 	cursor: pointer;

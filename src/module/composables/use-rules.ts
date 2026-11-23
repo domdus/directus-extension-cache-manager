@@ -61,6 +61,12 @@ function resetDraft() {
 	draft.collections = next.collections;
 }
 
+/** The draft has a rule for a collection that the saved config has none for. */
+function hasNewRules(): boolean {
+	const saved = data.value?.config.collections ?? {};
+	return Object.keys(draft.collections).some((name) => !(name in saved));
+}
+
 export function useRules() {
 	const api = useApi();
 
@@ -75,7 +81,9 @@ export function useRules() {
 			const response = await api.get(`${base}/rules`);
 			const first = !data.value;
 			data.value = response.data;
-			if (first || !dirty.value) resetDraft();
+			// Keep the draft when it differs, including a rule just added with default settings (opened from Analysis):
+			// sameRules treats a default rule as no rule, so `dirty` alone would reset it away.
+			if (first || (!dirty.value && !hasNewRules())) resetDraft();
 		} catch (err) {
 			error.value = errorText(err);
 		} finally {
