@@ -6,6 +6,13 @@ import { formatBytes, formatTimesPerHour } from './format';
  * how old answers actually get. Based on the activity log (minutes with a whole-cache clear in the period).
  * null = not enough data, or the lifetime is at least half-reached.
  */
+/** "once per hour", "2 times per hour", "less than once per hour". */
+function perHour(rate: string): string {
+	if (rate === '1') return 'once per hour';
+	if (rate === '<1') return 'less than once per hour';
+	return `${rate} times per hour`;
+}
+
 export function ttlVsPurgeText(
 	ttl: string | null | undefined,
 	purgeMinutes: number,
@@ -17,7 +24,7 @@ export function ttlVsPurgeText(
 		const wideInterval = (windowMinutes / options.wideMinutes) * 60_000;
 		if (wideInterval < ttlMs / 2) {
 			const wideRate = formatTimesPerHour(options.wideMinutes, windowMinutes);
-			return `Changes to users, roles, permissions, settings or the data model still clear the whole cache, about ${wideRate} times per hour, so cached responses rarely last the full ${formatDurationLabel(ttl)}.`;
+			return `Changes to users, roles, permissions, settings or the data model still clear the whole cache, about ${perHour(wideRate)}, so cached responses rarely last the full ${formatDurationLabel(ttl)}.`;
 		}
 	}
 	if (!ttlMs || ttlMs <= 0 || !(windowMinutes > 0) || !(purgeMinutes > 0)) return null;
@@ -26,9 +33,9 @@ export function ttlVsPurgeText(
 	const rate = formatTimesPerHour(purgeMinutes, windowMinutes);
 	const lifetime = formatDurationLabel(ttl);
 	if (options?.granular) {
-		return `Cached responses can last the full ${lifetime}. Without Granular mode, changes clear the whole cache about ${rate} times per hour.`;
+		return `Cached responses can last the full ${lifetime}. Without Granular mode, changes clear the whole cache about ${perHour(rate)}.`;
 	}
-	return `Cache Lifetime is ${lifetime}, but changes clear the whole cache about ${rate} times per hour. Most responses are gone long before that.`;
+	return `Cache Lifetime is ${lifetime}, but changes clear the whole cache about ${perHour(rate)}. Most responses are gone long before that.`;
 }
 
 /** Average minutes between whole-cache clears since this process started; null without enough data. */
@@ -78,5 +85,5 @@ export function sizeVsClearsText(bytes: number, fullClears: number, sinceIso: st
 	if (minutes === null || minutes > CONSTANT_CLEAR_MINUTES) return null;
 	// Times per hour, like Analysis (minutes with a whole-cache clear).
 	const rate = formatTimesPerHour(60, minutes * 60);
-	return `Changes clear the whole cache about ${rate} times per hour, so it can't grow: ${formatBytes(bytes)} now.`;
+	return `Changes clear the whole cache about ${perHour(rate)}, so it can't grow: ${formatBytes(bytes)} now.`;
 }

@@ -134,7 +134,11 @@
 					<v-notice type="info" class="toolbar-notice">
 						Collections without a rule clear on every change and use the global lifetime ({{ formatDurationLabel(data.globalTtl) }}).
 						<template v-if="ignoredWithoutRule.length">
-							Except {{ ignoredWithoutRule.join(', ') }}: on the ignore list in the Directus configuration, so they never clear.
+							Except
+							<span v-tooltip="ignoredWithoutRule.join(', ')" class="ignored-count">
+								{{ ignoredWithoutRule.length === 1 ? ignoredWithoutRule[0] : `${ignoredWithoutRule.length} collections` }}
+							</span>
+							on the ignore list in the Directus configuration: {{ ignoredWithoutRule.length === 1 ? 'it never clears' : 'they never clear' }}.
 						</template>
 					</v-notice>
 					<div class="add-rule">
@@ -455,6 +459,12 @@ td.center :deep(.v-checkbox) {
 	overflow-wrap: anywhere;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
+.ignored-count {
+	cursor: pointer;
+	text-decoration: underline dotted;
+	text-underline-offset: 3px;
+}
+
 th.fields-col,
 th.ttl-col {
 	cursor: pointer;
