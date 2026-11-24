@@ -2,6 +2,7 @@ import { useApi } from '@directus/extensions-sdk';
 import { computed, reactive, ref } from 'vue';
 import { EXTENSION_ID } from '../../shared/constants';
 import { isValidTtl } from '../../shared/duration';
+import type { TrendSnapshot } from '../../shared/trend';
 import { DEFAULT_RULE, sameRules, type CollectionRule, type RulesConfig } from '../../shared/rules';
 
 export type RulesStatus = {
@@ -23,8 +24,16 @@ export type RulesStatus = {
 	bytesByCollection: Record<string, number>;
 	/** Items written per collection since Directus started (this server). */
 	liveWrites?: Record<string, number>;
-	history: Array<{ hour: string; full: number; targeted: number; skipped: number; entries: number | null; bytes: number | null }>;
+	history: Array<{ hour: string; full: number; targeted: number; skipped: number; entries: number | null; bytes: number | null; hits?: number; misses?: number }>;
+	/** Cache reads since Directus started (this server). Optional: older API versions lack them. */
+	reads?: ReadCounts;
+	/** Per collection; null when it can't be told (Redis, or not in Granular mode). */
+	readsByCollection?: Record<string, ReadCounts> | null;
+	/** The counters about 1 hour ago; null during the first hour. */
+	hourAgo?: TrendSnapshot | null;
 };
+
+export type ReadCounts = { hits: number; misses: number; fresh: number };
 
 export type RulesState = {
 	config: RulesConfig;

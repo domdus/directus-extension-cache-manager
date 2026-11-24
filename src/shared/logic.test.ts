@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { aggregate, buildAnalysis, isRecommendable, parseHours, purgeMinutes, recommendation, toBuckets, type ActivityBucket } from './analysis';
 import { applyToEnv, completeBaseline, mergeValues, parseStored, readValues, toOverride, validateInput, type CacheValues } from './settings';
 import { durationText, isValidTtl, sameDuration } from './duration';
+import { countTrend, emptiedTrend, hitRate, hitRateTrend } from './trend';
 
 const WINDOW = 1440;
 
@@ -570,4 +571,33 @@ test('recent events: identical clears in the same second become one row with a c
 		['Created in disk_free', 1, 0],
 	]);
 	assert.equal(groupEvents(rows, 2).length, 2);
+});
+
+test('trend: counters show what they grew in the last hour', () => {
+	assert.equal(countTrend(39, 39, 'bad'), null);
+	assert.equal(countTrend(39, undefined, 'bad'), null);
+	assert.deepEqual(countTrend(1234, 1000, 'good'), { up: true, tone: 'good', text: '+234', tooltip: '234 in the last hour' });
+});
+
+test('trend: emptied less often is good, more often is bad', () => {
+	const since = '2026-11-23T16:00:00Z';
+	const now = Date.parse('2026-11-24T08:00:00Z'); // 16 h
+	const hourAgo = { at: '2026-11-24T07:00:00Z', full: 0, targeted: 0, skipped: 0, fullMinutes: 25, hits: 0, misses: 0 }; // 15 h / 25 = 36 min
+	const up = emptiedTrend(20, since, hourAgo, now)!; // 16 h / 20 = 48 min
+	assert.equal(up.up, true);
+	assert.equal(up.tone, 'good');
+	assert.equal(up.text, '+12 min');
+	assert.equal(up.tooltip, '1 hour ago: about every 36 minutes');
+	assert.equal(emptiedTrend(40, since, hourAgo, now)!.tone, 'bad');
+	assert.equal(emptiedTrend(20, since, null, now), null);
+	assert.equal(emptiedTrend(2, since, hourAgo, now), null);
+});
+
+test('trend: hit rate in points, only with enough requests', () => {
+	const hourAgo = { at: '', full: 0, targeted: 0, skipped: 0, fullMinutes: 0, hits: 60, misses: 40 };
+	assert.deepEqual(hitRateTrend(130, 70, hourAgo), { up: true, tone: 'good', text: '+5 %', tooltip: '1 hour ago: 60 %' });
+	assert.equal(hitRateTrend(110, 90, hourAgo)!.tone, 'bad');
+	assert.equal(hitRateTrend(120, 80, hourAgo), null);
+	assert.equal(hitRateTrend(130, 70, { ...hourAgo, hits: 5, misses: 5 }), null);
+	assert.equal(hitRate(5, 5), null);
 });

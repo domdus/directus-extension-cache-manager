@@ -15,7 +15,7 @@ Measured on a website-like setup, see [Performance](#performance).
 - **Clear single items** (advanced): a change to one item keeps the cached single-item responses of all other items.
 - **Rules per collection**: choose which changes clear, ignore fields like a view counter, and set a lifetime per collection.
 - **Analysis**: which collections change how often, with suggested rules.
-- **Statistics**: what each change cleared, the cache size, what a change to each collection clears, and the last 24 hours.
+- **Statistics**: what each change cleared, the hit rate per collection, the cache size, what a change to each collection clears, and the last 24 hours.
 - **Cache settings in the Data Studio**: Auto Purge, Skip Cache and the cache lifetime, applied without a restart.
 - **Several Directus servers**: with a Redis cache, all servers share what to clear and pick up saved settings.
 - **Export and import** of all settings.
@@ -94,9 +94,12 @@ Collections with activity tracking turned off show **Not measured**. Changes tha
 
 What happened since Directus started: global cache clears, granular clears, changes a rule kept, and the latest events with their reason. The numbers reset when Directus restarts.
 
+Each number shows how it changed in the last hour, like a stock price: green is better, red is worse, grey is neither.
+
+- **Cache Hits**: how often apps got a response from the cache. **Hit Rate** is hits ÷ (hits + misses). A miss is a response that wasn't in the cache, so Directus built and stored it. **Fresh Requests** asked for the latest data with `Cache-Control: no-store` and skip the cache; they don't count as misses. In Granular mode, **Hit Rate by Collection** shows the same per collection. With Redis, only the totals are counted.
 - **Cache Size** (cache in memory): size, number of cached responses, the largest size in the last 24 hours, and expired responses deleted.
 - **What a Change Clears**: per collection, the cached responses that use it, their share of the cache, and how often the collection changes. A change to the collection clears them, so shorter bars are better; a long bar with many changes per hour empties the cache often. A response that uses several collections counts in each row, so the rows add up to more than the total. **Kept**: the collection never clears.
-- **Last 24 Hours**: changes per hour by result, and with the cache in memory the cache size per hour.
+- **Last 24 Hours**: changes per hour by result, hits and misses per hour, and with the cache in memory the cache size per hour.
 
 ## Settings on Status
 
@@ -111,7 +114,7 @@ Saved settings apply right away and survive a restart. **Reset to Configured Val
 
 ## Good to Know
 
-- **Apps that need fresh data** right away, e.g. an access check after a purchase, can send `Cache-Control: no-store` (with **Skip Cache** on).
+- **Apps that need fresh data** right away, e.g. an access check after a purchase, can send `Cache-Control: no-store` (with **Skip Cache** on). Send it only for those requests: **Statistics** counts them as Fresh Requests per collection, so you can check.
 - **Several Directus servers** need the cache in Redis. Cache Manager then keeps its list of what each response uses there too: a change on any server clears what any server cached, and saved settings reach all servers within about 10 seconds. Statistics count per server.
 - **Saving clears the cache once**, because it writes to the project settings.
 - **Expired responses in memory**: Directus only deletes an expired response when it is requested again. Cache Manager deletes them about once a minute, so the cache doesn't fill up with them. Not needed with Redis.

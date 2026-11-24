@@ -43,6 +43,11 @@ export class TagIndex {
 		this.expiry.add(key, expires);
 	}
 
+	/** The tags of a cached answer; null when it isn't indexed. */
+	tagsOf(key: string): string[] | null {
+		return this.byKey.get(key)?.tags ?? null;
+	}
+
 	/** Adds to the size of an answer (its small `__expires_at` entry, stored separately). */
 	addBytes(key: string, bytes: number) {
 		const entry = this.byKey.get(key);

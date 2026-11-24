@@ -5,7 +5,7 @@ import { parseRules, ruleClears, ttlFor, validateRules, DEFAULT_RULE, type Rules
 import { TagIndex } from '../shared/tag-index';
 import { measureStore, measureStoreChunked, memoryStoreOf, storedSizeOf, sweepKeys } from './store-size';
 import { ExpiryQueue } from '../shared/expiry-queue';
-import { applyRules, currentBucket, describeRequest, foldItemTags, keysOf, measure, tick, patchCache, patchItemsService, requestMiddleware, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
+import { applyRules, asksForFresh, currentBucket, hourAgo, takeSnapshot, describeRequest, foldItemTags, keysOf, measure, tick, patchCache, patchItemsService, requestMiddleware, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
 import { parse } from 'graphql';
 
 /* ---------- schema used by the dependency tests ---------- */
@@ -153,6 +153,9 @@ class FakeKeyv {
 		this.store.set(key, value);
 		return true;
 	}
+	async get(key: string) {
+		return this.store.get(key);
+	}
 	async delete(key: string | string[]) {
 		for (const entry of Array.isArray(key) ? key : [key]) this.store.delete(entry);
 		return true;
@@ -219,10 +222,11 @@ async function setup(config: RulesConfig) {
 	const rt = runtime();
 	rt.env = env;
 	rt.handlers = null;
-	const { handleClear, handleSet, tick, trackRead } = await import('./targeted');
+	const { handleClear, handleGet, handleSet, tick, trackRead } = await import('./targeted');
 	rt.handlers = {
 		clear: (c) => handleClear(rt, c),
 		set: (c, k, v, t) => handleSet(rt, c, k, v, t),
+		get: (c, k) => handleGet(rt, c, k),
 		tick: () => tick(rt),
 		read: (service, query) => trackRead(rt, service, query),
 	};
@@ -778,4 +782,71 @@ test('skip reason: "Only … changed" only when Skip Fields kept the change', as
 	const touch = { collection: 'pages', action: 'update' as const, fields: ['title', 'body'], keys: [] };
 	assert.equal(skipReason(touch as any, { ...DEFAULT_RULE, update: false }), "Changed in pages (rule: don't clear on update)");
 	assert.equal(skipReason({ ...touch, fields: ['views_count'] } as any, { ...DEFAULT_RULE, skipFields: ['views_count'] }), 'Only views_count changed in pages');
+});
+
+test('hits: a stored response is a miss, reading it again a hit, per collection', async () => {
+	await setup({ targeted: true, collections: {} });
+	await cacheAnswer('pages-list', ['pages', 'services']);
+	await cacheAnswer('page-5', ['pages#', 'pages#5']);
+	assert.equal(await (cache as any).get('pages-list'), 'value');
+	await (cache as any).get('pages-list__expires_at');
+	await (cache as any).get('page-5');
+	assert.equal(await (cache as any).get('unknown'), undefined, 'a miss counts when the response is stored, not here');
+	const status = runtimeStatus();
+	assert.deepEqual(status.reads, { hits: 2, misses: 2, fresh: 0 });
+	assert.deepEqual(status.readsByCollection!.pages, { hits: 2, misses: 2, fresh: 0 });
+	assert.deepEqual(status.readsByCollection!.services, { hits: 1, misses: 1, fresh: 0 });
+	const bucket = status.history[status.history.length - 1]!;
+	assert.equal(bucket.hits, 2);
+	assert.equal(bucket.misses, 2);
+});
+
+test('hits: without Granular mode only the totals count', async () => {
+	await setup({ targeted: false, collections: {} });
+	await cacheAnswer('a', ['pages']);
+	await (cache as any).get('a');
+	const status = runtimeStatus();
+	assert.deepEqual(status.reads, { hits: 1, misses: 1, fresh: 0 });
+	assert.equal(status.readsByCollection, null);
+});
+
+test('fresh: no-store counts only with CACHE_SKIP_ALLOWED', () => {
+	const req = { get: (name: string) => (name === 'cache-control' ? 'no-store' : undefined) };
+	assert.equal(asksForFresh(req, {}), false);
+	assert.equal(asksForFresh(req, { CACHE_SKIP_ALLOWED: true }), true);
+	assert.equal(asksForFresh({ headers: { 'cache-control': 'max-age=0' } }, { CACHE_SKIP_ALLOWED: 'true' }), false);
+});
+
+test('fresh: the middleware counts no-store requests under their collection', async () => {
+	const rt = await setup({ targeted: true, collections: {} });
+	rt.env = { ...env, CACHE_SKIP_ALLOWED: true };
+	rt.database = async () => [];
+	(rt.database as any).select = undefined;
+	const req = {
+		method: 'GET',
+		originalUrl: '/items/visits?fields=id',
+		schema,
+		sanitizedQuery: { fields: ['id'] },
+		accountability: { admin: true },
+		get: (name: string) => (name === 'cache-control' ? 'no-store' : undefined),
+	};
+	// Directus still stores the response of a no-store request: that is no miss.
+	await new Promise<void>((resolve) => requestMiddleware(rt)(req, { locals: {} }, () => cacheAnswer('fresh-visits', ['visits']).then(resolve)));
+	assert.equal(runtimeStatus().reads.fresh, 1);
+	assert.equal(runtimeStatus().reads.misses, 0);
+	assert.equal(runtimeStatus().readsByCollection!.visits!.fresh, 1);
+});
+
+test('trend: the newest snapshot at least 1 hour old', () => {
+	const rt = runtime();
+	const start = Date.parse('2026-11-24T10:00:00Z');
+	assert.equal(hourAgo(rt, start), null);
+	for (let minute = 0; minute <= 90; minute++) {
+		rt.reads.hits = minute;
+		takeSnapshot(rt, start + minute * 60_000);
+	}
+	const now = start + 90 * 60_000;
+	assert.equal(hourAgo(rt, now)!.hits, 30);
+	assert.ok(rt.snapshots.length <= 72, 'keeps only a little more than an hour');
+	assert.equal(hourAgo(rt, start + 30 * 60_000 + 59 * 60_000)!.hits, 29);
 });

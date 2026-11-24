@@ -27,6 +27,7 @@ import { ENTRY_OVERHEAD, measureStoreChunked, memoryStoreOf, storedSizeOf, store
 type Logger = { info: (...args: any[]) => void; warn: (...args: any[]) => void; error: (...args: any[]) => void };
 type KeyvLike = {
 	clear: () => Promise<void>;
+	get?: (key: string) => Promise<unknown>;
 	set: (key: string, value: unknown, ttl?: number) => Promise<unknown>;
 	delete: (key: string | string[]) => Promise<unknown>;
 };
@@ -64,6 +65,30 @@ export type HistoryBucket = {
 	skipped: number;
 	entries: number | null;
 	bytes: number | null;
+	/** Requests answered from the cache, and responses that had to be built and were stored (misses). */
+	hits: number;
+	misses: number;
+};
+
+/** Cache reads since this process started. */
+export type ReadCounts = {
+	/** Requests answered from the cache. */
+	hits: number;
+	/** Responses Directus built and stored because the cache didn't have them. */
+	misses: number;
+	/** Requests that asked for fresh data (Cache-Control: no-store with CACHE_SKIP_ALLOWED): they never use the cache. */
+	fresh: number;
+};
+
+/** The counters 1 hour ago, for the trend arrows. */
+export type Snapshot = {
+	at: string;
+	full: number;
+	targeted: number;
+	skipped: number;
+	fullMinutes: number;
+	hits: number;
+	misses: number;
 };
 
 export type RuntimeStatus = {
@@ -91,18 +116,26 @@ export type RuntimeStatus = {
 	history: HistoryBucket[];
 	/** Items written per collection since this process started, counted live (with or without activity tracking). */
 	liveWrites: Record<string, number>;
+	reads: ReadCounts;
+	/** Per collection; null when it can't be told (Redis, or not in Granular mode): only the totals count then. */
+	readsByCollection: Record<string, ReadCounts> | null;
+	/** The counters about 1 hour ago; null during the first hour. */
+	hourAgo: Snapshot | null;
 };
 
 type Runtime = {
 	config: RulesConfig;
 	cache: KeyvLike | null;
 	originals: { clear: KeyvLike['clear']; set: KeyvLike['set'] } | null;
+	originalGet: ((key: string) => Promise<unknown>) | null;
 	patchedMethods: boolean;
 	/** The request middleware is only added at Directus start (init 'middlewares.after'), not on an extension reload. */
 	middlewareRegistered: boolean;
 	index: TagIndex;
 	writeContext: AsyncLocalStorage<WriteContext>;
 	requestContext: AsyncLocalStorage<RequestContext>;
+	/** Set inside a request that asked for fresh data: Directus still stores its response, but that's no miss. */
+	freshContext: AsyncLocalStorage<true>;
 	permissionDeps: Promise<Map<string, Set<string>>> | null;
 	problems: string[];
 	since: string;
@@ -112,6 +145,10 @@ type Runtime = {
 	swept: SweepResult;
 	history: HistoryBucket[];
 	liveWrites: Map<string, number>;
+	reads: ReadCounts;
+	readsByCollection: Map<string, ReadCounts>;
+	/** One snapshot per minute, the last hour and a bit (for the trend arrows). */
+	snapshots: Snapshot[];
 	/**
 	 * With a Redis cache: the index and the clear counters live in Redis, so every Directus server sees what the others
 	 * stored (horizontal scaling). null with the memory store, where each process has its own cache anyway.
@@ -147,6 +184,8 @@ type Runtime = {
 	handlers: {
 		clear: (cache: KeyvLike) => Promise<void>;
 		set: (cache: KeyvLike, key: string, value: unknown, ttl?: number) => Promise<unknown>;
+		/** Optional: handlers of an older version (extension reload) lack it until the next install. */
+		get?: (cache: KeyvLike, key: string) => Promise<unknown>;
 		tick: () => Promise<void>;
 		/** Optional: handlers of an older version (extension reload) lack it until the next install. */
 		read?: (service: any, query: unknown) => Promise<void>;
@@ -197,11 +236,13 @@ function freshRuntime(): Runtime {
 		config: { ...DEFAULT_RULES, collections: {} },
 		cache: null,
 		originals: null,
+		originalGet: null,
 		patchedMethods: false,
 		middlewareRegistered: false,
 		index: new TagIndex(),
 		writeContext: new AsyncLocalStorage<WriteContext>(),
 		requestContext: new AsyncLocalStorage<RequestContext>(),
+		freshContext: new AsyncLocalStorage<true>(),
 		permissionDeps: null,
 		problems: [],
 		since: new Date().toISOString(),
@@ -211,6 +252,9 @@ function freshRuntime(): Runtime {
 		swept: { entries: 0, bytes: 0 },
 		history: [],
 		liveWrites: new Map(),
+		reads: { hits: 0, misses: 0, fresh: 0 },
+		readsByCollection: new Map(),
+		snapshots: [],
 		expiry: new ExpiryQueue(),
 		shared: null,
 		sharedCounts: {},
@@ -241,7 +285,7 @@ export function currentBucket(rt: Runtime, now = Date.now()): HistoryBucket {
 	const hour = new Date(Math.floor(now / HOUR) * HOUR).toISOString();
 	let bucket = rt.history[rt.history.length - 1];
 	if (bucket?.hour !== hour) {
-		bucket = { hour, full: 0, targeted: 0, skipped: 0, entries: null, bytes: null };
+		bucket = { hour, full: 0, targeted: 0, skipped: 0, entries: null, bytes: null, hits: 0, misses: 0 };
 		rt.history.push(bucket);
 		if (rt.history.length > HISTORY_HOURS) rt.history.splice(0, rt.history.length - HISTORY_HOURS);
 	}
@@ -436,8 +480,9 @@ export function settleGraphql(request: RequestContext) {
 	if (!params || !tracksAllReads(params.document, params.operationName, graphql.scope, known)) request.deps.add(ANY);
 }
 
-/** Wraps clear() and set() of Directus' response cache once per process. */
+/** Wraps clear(), set() and get() of Directus' response cache once per process. */
 export function patchCache(cache: KeyvLike, rt = runtime()) {
+	patchGet(cache, rt);
 	if ((cache as any).__cacheManager) return;
 	const clear = cache.clear;
 	const set = cache.set;
@@ -450,6 +495,105 @@ export function patchCache(cache: KeyvLike, rt = runtime()) {
 	};
 	(cache as any).__cacheManager = true;
 	rt.cache = cache;
+}
+
+/** get() on its own: a cache patched by an older version (extension reload) has clear() and set() wrapped already. */
+function patchGet(cache: KeyvLike, rt: Runtime) {
+	const get = cache.get;
+	if (typeof get !== 'function' || (cache as any).__cacheManagerGet) return;
+	rt.originalGet = get;
+	cache.get = function (this: KeyvLike, key: string) {
+		return rt.handlers?.get ? rt.handlers.get(this, key) : get.call(this, key);
+	};
+	(cache as any).__cacheManagerGet = true;
+}
+
+function readsOf(rt: Runtime, collection: string): ReadCounts {
+	let counts = rt.readsByCollection.get(collection);
+	if (!counts) rt.readsByCollection.set(collection, (counts = { hits: 0, misses: 0, fresh: 0 }));
+	return counts;
+}
+
+/** Collections of these tags, without the per-item ones (`pages#5` counts under pages). */
+function collectionsOfTags(tags: Iterable<string>): Set<string> {
+	return new Set([...tags].map((tag) => collectionOfItemTag(tag) ?? tag));
+}
+
+/**
+ * What a get() call does: Directus reads the response cache before every GET (and GraphQL) request. A value is a hit;
+ * a miss is counted when the new response is stored (handleSet), so errors and responses Directus doesn't cache (such
+ * as GraphQL mutations) don't count. Exported for tests.
+ */
+export async function handleGet(rt: Runtime, cache: KeyvLike, key: string) {
+	const value = await rt.originalGet!.call(cache, key);
+	try {
+		if (value && typeof key === 'string' && !key.endsWith('__expires_at')) {
+			rt.reads.hits++;
+			currentBucket(rt).hits++;
+			const tags = rt.shared ? null : rt.index.tagsOf(key);
+			if (tags) for (const collection of collectionsOfTags(tags)) readsOf(rt, collection).hits++;
+		}
+	} catch {
+		// Statistics must never break a request.
+	}
+	return value;
+}
+
+/** A response Directus built and stored: a miss for the totals and for each collection it uses. */
+function countMiss(rt: Runtime, deps: Set<string> | undefined) {
+	try {
+		rt.reads.misses++;
+		currentBucket(rt).misses++;
+		if (deps) for (const collection of collectionsOfTags(deps)) readsOf(rt, collection).misses++;
+	} catch {
+		// Statistics must never break a request.
+	}
+}
+
+/** Did the request ask for fresh data, which Directus honours with CACHE_SKIP_ALLOWED? Exported for tests. */
+export function asksForFresh(req: any, env: Record<string, unknown>): boolean {
+	if (!toBool(env['CACHE_SKIP_ALLOWED'])) return false;
+	const header = typeof req?.get === 'function' ? req.get('cache-control') : req?.headers?.['cache-control'];
+	return typeof header === 'string' && header.includes('no-store');
+}
+
+/** Counts a request that skipped the cache, under its collection for /items/<collection> requests. */
+function countFresh(rt: Runtime, req: any) {
+	try {
+		rt.reads.fresh++;
+		const pathname = String(req.originalUrl ?? req.url ?? '').split('?')[0] ?? '';
+		const schema: SchemaLike | undefined = req.schema;
+		const collection = schema && !pathname.startsWith('/graphql') ? collectionOfPath(pathname, (name) => !!schema.collections?.[name]) : null;
+		if (collection) readsOf(rt, collection).fresh++;
+	} catch {
+		// Statistics must never break a request.
+	}
+}
+
+/** Once a minute: the counters, so Statistics can compare with 1 hour ago. */
+export function takeSnapshot(rt: Runtime, now = Date.now()) {
+	rt.snapshots.push({
+		at: new Date(now).toISOString(),
+		full: rt.counts.full,
+		targeted: rt.counts.targeted,
+		skipped: rt.counts.skipped,
+		fullMinutes: rt.counts.fullMinutes ?? 0,
+		hits: rt.reads.hits,
+		misses: rt.reads.misses,
+	});
+	// Keep a little more than an hour: the oldest one at least 60 minutes old is the comparison.
+	const cutoff = now - 70 * 60_000;
+	while (rt.snapshots.length > 1 && new Date(rt.snapshots[1]!.at).getTime() <= cutoff) rt.snapshots.shift();
+}
+
+/** The newest snapshot that is at least 1 hour old; null during the first hour. Exported for tests. */
+export function hourAgo(rt: Runtime, now = Date.now()): Snapshot | null {
+	let found: Snapshot | null = null;
+	for (const snapshot of rt.snapshots) {
+		if (now - new Date(snapshot.at).getTime() >= HOUR) found = snapshot;
+		else break;
+	}
+	return found ? { ...found } : null;
 }
 
 async function fullClear(rt: Runtime, cache: KeyvLike, event: Omit<ClearEvent, 'at' | 'kind' | 'removed'>) {
@@ -591,6 +735,7 @@ export async function handleSet(rt: Runtime, cache: KeyvLike, key: string, value
 	if (request?.ttl) ttl = request.ttl;
 	const result = await rt.originals!.set.call(cache, key, value, ttl);
 	if (typeof key !== 'string') return result;
+	if (!key.endsWith('__expires_at') && !rt.freshContext.getStore()) countMiss(rt, rt.config.targeted && !rt.shared ? request?.deps : undefined);
 	const expires = Date.now() + (ttl ?? globalTtlMs(rt.env));
 	// In every mode: the sweep deletes the entry when it expires (Keyv only does that when the key is read again).
 	if (memoryStoreOf(cache)) rt.expiry.add(storeKeyOf(cache, key), expires);
@@ -719,6 +864,19 @@ export function foldItemTags(counts: Record<string, number>): Record<string, num
 /** Express middleware for init('middlewares.after'): runs after Directus' cache check, before the routes. */
 export function requestMiddleware(rt = runtime()) {
 	rt.middlewareRegistered = true;
+	const handle = describeAndContinue(rt);
+	return (req: any, res: any, next: (error?: unknown) => void) => {
+		const isGraphql = String(req.originalUrl ?? '').startsWith('/graphql');
+		if (rt.cache && (req.method === 'GET' || isGraphql) && asksForFresh(req, rt.env)) {
+			countFresh(rt, req);
+			return rt.freshContext.run(true, () => handle(req, res, next));
+		}
+		return handle(req, res, next);
+	};
+}
+
+/** The request middleware after counting: what the response depends on and how long it lives. */
+function describeAndContinue(rt: Runtime) {
 	return (req: any, res: any, next: (error?: unknown) => void) => {
 		const isGraphql = String(req.originalUrl ?? '').startsWith('/graphql');
 		if (!rt.cache || (!rt.config.targeted && !hasTtlRules(rt.config)) || (req.method !== 'GET' && !isGraphql)) return next();
@@ -766,12 +924,14 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 	rt.handlers = {
 		clear: (cache) => handleClear(rt, cache),
 		set: (cache, key, value, ttl) => handleSet(rt, cache, key, value, ttl),
+		get: (cache, key) => handleGet(rt, cache, key),
 		tick: () => tick(rt),
 		read: (service, query) => trackRead(rt, service, query),
 	};
 	const problems: string[] = [];
 	problems.push(...patchItemsService(ctx.services?.ItemsService, rt));
 
+	if (rt.cache) patchGet(rt.cache, rt);
 	if (!rt.cache) {
 		try {
 			const schema = await ctx.getSchema();
@@ -813,6 +973,7 @@ const MEASURE_ON_DEMAND = 10_000;
  * expiry minute is over are looked at; the measurement runs in chunks. Exported for tests.
  */
 export async function tick(rt: Runtime, now = Date.now()) {
+	takeSnapshot(rt, now);
 	rt.index.prune(now);
 	currentBucket(rt, now);
 	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
@@ -921,6 +1082,9 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		bytesByCollection: foldItemTags(rt.index.bytes()),
 		history: lastDay(rt),
 		liveWrites: Object.fromEntries(rt.liveWrites),
+		reads: { ...rt.reads },
+		readsByCollection: rt.config.targeted && !rt.shared ? Object.fromEntries([...rt.readsByCollection].map(([name, counts]) => [name, { ...counts }])) : null,
+		hourAgo: hourAgo(rt),
 	};
 }
 
@@ -931,7 +1095,9 @@ function lastDay(rt: Runtime, now = Date.now()): HistoryBucket[] {
 	const first = Math.floor(now / HOUR) * HOUR - (HISTORY_HOURS - 1) * HOUR;
 	return Array.from({ length: HISTORY_HOURS }, (_, i) => {
 		const hour = new Date(first + i * HOUR).toISOString();
-		return { ...(byHour.get(hour) ?? { hour, full: 0, targeted: 0, skipped: 0, entries: null, bytes: null }) };
+		// ?? 0: buckets kept from an older version (reload) lack hits and misses.
+		const bucket = byHour.get(hour);
+		return bucket ? { ...bucket, hits: bucket.hits ?? 0, misses: bucket.misses ?? 0 } : { hour, full: 0, targeted: 0, skipped: 0, entries: null, bytes: null, hits: 0, misses: 0 };
 	});
 }
 

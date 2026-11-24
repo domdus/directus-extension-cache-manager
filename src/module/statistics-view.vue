@@ -18,8 +18,8 @@
 			<sidebar-detail id="about" icon="info" title="About" :close="false">
 				<p class="sidebar-text">Every change that cleared the cache on this Directus server, and what it removed. The page refreshes every 15 seconds.</p>
 				<p class="sidebar-text">
-					Directus doesn't count cache hits. This page shows how often the cache is cleared, how big it is, and how many
-					changes kept the rest of the cache.
+					This page shows how often the cache is cleared, how often apps get a response from it, how big it is, and how
+					many changes kept the rest of the cache. Directus doesn't count cache hits itself; Cache Manager does.
 				</p>
 				<p class="sidebar-text">
 					Directus keeps an expired response until someone requests it again. Cache Manager deletes expired responses every
@@ -55,6 +55,7 @@
 				<section class="summary-bar" aria-label="Clear counts">
 					<div class="stat">
 						<span class="stat-value">{{ times(data.status.counts.full) }}</span>
+						<stat-trend :trend="trends.full" />
 						<span class="stat-label">
 							Global Cache
 							<v-icon
@@ -67,6 +68,7 @@
 					</div>
 					<div class="stat">
 						<span class="stat-value">{{ times(data.status.counts.targeted) }}</span>
+						<stat-trend :trend="trends.targeted" />
 						<span class="stat-label">
 							Granular
 							<v-icon
@@ -79,6 +81,7 @@
 					</div>
 					<div class="stat">
 						<span class="stat-value">{{ formatNumber(data.status.counts.skipped) }}</span>
+						<stat-trend :trend="trends.skipped" />
 						<span class="stat-label">
 							Kept by Rule
 							<v-icon
@@ -91,6 +94,7 @@
 					</div>
 					<div v-if="emptiedEvery" class="stat">
 						<span class="stat-value">{{ emptiedEvery }}</span>
+						<stat-trend :trend="trends.emptied" />
 						<span class="stat-label">
 							{{ data.status.shared ? 'Emptied by This Server' : 'Emptied' }}
 							<v-icon
@@ -102,6 +106,86 @@
 						</span>
 					</div>
 				</section>
+
+				<template v-if="reads">
+					<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
+						<template #icon><v-icon name="bolt" /></template>
+						Cache Hits
+					</v-divider>
+					<p class="explain intro">How often apps got a response from the cache since Directus started.</p>
+					<section class="summary-bar" aria-label="Cache hits">
+						<div class="stat">
+							<span class="stat-value">{{ hitRateValue === null ? '–' : `${Math.round(hitRateValue * 100)} %` }}</span>
+							<stat-trend :trend="trends.hitRate" />
+							<span class="stat-label">
+								Hit Rate
+								<v-icon
+									v-tooltip.top="hitRateValue === null ? `Shown from ${MIN_REQUESTS_FOR_RATE} requests on.` : 'Share of requests answered from the cache: hits ÷ (hits + misses). Fresh requests don\'t count.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+						<div class="stat">
+							<span class="stat-value">{{ formatNumber(reads.hits) }}</span>
+							<stat-trend :trend="trends.hits" />
+							<span class="stat-label">
+								Hits
+								<v-icon v-tooltip.top="'Requests answered from the cache.'" name="help_outline" small class="stat-info" />
+							</span>
+						</div>
+						<div class="stat">
+							<span class="stat-value">{{ formatNumber(reads.misses) }}</span>
+							<stat-trend :trend="trends.misses" />
+							<span class="stat-label">
+								Misses
+								<v-icon
+									v-tooltip.top="'Responses that weren\'t in the cache: Directus built them and stored them.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+						<div v-if="reads.fresh > 0" class="stat">
+							<span class="stat-value">{{ formatNumber(reads.fresh) }}</span>
+							<span class="stat-label">
+								Fresh Requests
+								<v-icon
+									v-tooltip.top="'Requests with the header Cache-Control: no-store. Directus skips the cache for them (CACHE_SKIP_ALLOWED). Apps should send it only where they need the latest data, such as payments.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+					</section>
+					<div v-if="hitRows.length" class="largest">
+						<span class="label">Hit Rate by Collection</span>
+						<p class="explain">
+							Longer is better. A response that uses several collections counts in each of their rows.
+						</p>
+						<div v-for="row in hitRows" :key="row.name" class="largest-row hits-row">
+							<span class="largest-name">{{ row.name }}</span>
+							<span class="largest-bar largest-bar--hits"><span :style="{ inlineSize: `${(row.rate ?? 0) * 100}%` }" /></span>
+							<span class="largest-count">{{ formatNumber(row.hits) }} {{ row.hits === 1 ? 'hit' : 'hits' }}</span>
+							<span class="largest-count">{{ formatNumber(row.misses) }} {{ row.misses === 1 ? 'miss' : 'misses' }}</span>
+							<span
+								v-if="row.fresh"
+								v-tooltip="'Requests to this collection that skipped the cache with Cache-Control: no-store.'"
+								class="largest-count largest-count--info"
+							>
+								{{ formatNumber(row.fresh) }} fresh
+							</span>
+							<span v-else class="largest-count" />
+							<span class="largest-share">{{ row.rate === null ? '' : `${Math.round(row.rate * 100)} %` }}</span>
+						</div>
+					</div>
+					<p v-else-if="reads.hits + reads.misses > 0 && !data.status.readsByCollection" class="meta">
+						{{ data.status.shared ? 'With Redis, hits are counted in total only.' : 'Hit rate per collection is shown in Granular mode only.' }}
+					</p>
+				</template>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="memory" /></template>
@@ -218,6 +302,7 @@
 				<p class="explain intro">Per hour. Hover a bar for the numbers.</p>
 				<div class="charts">
 					<hour-bars title="Changes" :columns="clearColumns" :legend="clearLegend" :format="(v) => formatNumber(v)" empty-text="No changes yet." />
+					<hour-bars v-if="reads" title="Hits and Misses" :columns="hitColumns" :legend="hitLegend" :format="(v) => formatNumber(v)" empty-text="No cached requests yet." />
 					<hour-bars v-if="data.status.size" title="Cache Size" :columns="sizeColumns" :legend="sizeLegend" :format="formatBytes" empty-text="The cache is empty." />
 				</div>
 
@@ -266,6 +351,8 @@ import { emptiedEveryLabel, sizeVsClearsText } from '../shared/health';
 import { groupEvents, type GroupedEvent } from '../shared/events';
 import { neverClearCollections } from '../shared/rules';
 import { formatBytes, formatNumber } from '../shared/format';
+import { countTrend, emptiedTrend, hitRate, hitRateTrend, MIN_REQUESTS_FOR_RATE } from '../shared/trend';
+import StatTrend from './stat-trend.vue';
 
 const pageClass = usePageClass();
 const { data, loading, error, load } = useRules();
@@ -287,6 +374,37 @@ const emptiedEvery = computed(() => {
 	if (!status) return null;
 	return emptiedEveryLabel(status.counts.fullMinutes ?? 0, status.since);
 });
+const reads = computed(() => data.value?.status.reads ?? null);
+const hitRateValue = computed(() => (reads.value ? hitRate(reads.value.hits, reads.value.misses) : null));
+
+/** Each number compared with 1 hour ago (stock style): green is better, red worse, grey neither. */
+const trends = computed(() => {
+	const status = data.value?.status;
+	const before = status?.hourAgo ?? null;
+	if (!status) return {};
+	const r = status.reads;
+	return {
+		full: countTrend(status.counts.full, before?.full, 'bad'),
+		targeted: countTrend(status.counts.targeted, before?.targeted, 'neutral'),
+		skipped: countTrend(status.counts.skipped, before?.skipped, 'good'),
+		emptied: emptiedTrend(status.counts.fullMinutes ?? 0, status.since, before),
+		hitRate: r ? hitRateTrend(r.hits, r.misses, before) : null,
+		hits: r ? countTrend(r.hits, before?.hits, 'neutral') : null,
+		misses: r ? countTrend(r.misses, before?.misses, 'neutral') : null,
+	};
+});
+
+/** Collections with the most requests, with their hit rate. */
+const hitRows = computed(() => {
+	const by = data.value?.status.readsByCollection;
+	if (!by) return [];
+	return Object.entries(by)
+		.filter(([name, counts]) => name !== '*' && counts.hits + counts.misses + counts.fresh > 0)
+		.map(([name, counts]) => ({ name, ...counts, rate: counts.hits + counts.misses > 0 ? counts.hits / (counts.hits + counts.misses) : null }))
+		.sort((a, b) => b.hits + b.misses + b.fresh - (a.hits + a.misses + a.fresh))
+		.slice(0, 10);
+});
+
 const peakBytes = computed(() => {
 	const values = (data.value?.status.history ?? []).map((h) => h.bytes).filter((bytes): bytes is number => bytes != null);
 	return values.length ? Math.max(...values) : null;
@@ -298,11 +416,16 @@ const COLORS = {
 	targeted: 'var(--theme--success, var(--success))',
 	skipped: 'var(--blue, #3399ff)',
 	size: 'var(--theme--primary, var(--primary))',
+	miss: 'var(--theme--foreground-subdued, var(--foreground-subdued))',
 };
 const clearLegend = [
 	{ label: 'Global Cache', color: COLORS.full },
 	{ label: 'Granular', color: COLORS.targeted },
 	{ label: 'Kept by Rule', color: COLORS.skipped },
+];
+const hitLegend = [
+	{ label: 'Hits', color: COLORS.targeted },
+	{ label: 'Misses', color: COLORS.miss },
 ];
 const sizeLegend = [{ label: 'Largest Size per Hour', color: COLORS.size }];
 
@@ -326,6 +449,22 @@ const clearColumns = computed<BarColumn[]>(() =>
 			{ value: h.skipped, color: COLORS.skipped },
 		],
 	})),
+);
+
+const hitColumns = computed<BarColumn[]>(() =>
+	(data.value?.status.history ?? []).map((h) => {
+		const hits = h.hits ?? 0;
+		const misses = h.misses ?? 0;
+		const rate = hits + misses > 0 ? ` (${Math.round((hits / (hits + misses)) * 100)} % hits)` : '';
+		return {
+			label: hourLabel(h.hour),
+			tooltip: `${hourRange(h.hour)}: hits ${formatNumber(hits)}, misses ${formatNumber(misses)}${rate}`,
+			segments: [
+				{ value: hits, color: COLORS.targeted },
+				{ value: misses, color: COLORS.miss },
+			],
+		};
+	}),
 );
 
 const sizeColumns = computed<BarColumn[]>(() =>
@@ -705,6 +844,32 @@ th {
 .largest-share--kept {
 	cursor: pointer;
 	color: var(--theme--success, var(--success));
+}
+.hits-row {
+	grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) 5.5rem 6rem 5rem 3rem;
+}
+@container largest (max-width: 560px) {
+	.hits-row {
+		grid-template-columns: minmax(0, 1fr) auto auto;
+	}
+	.hits-row > :nth-child(3) {
+		grid-row: 2;
+		grid-column: 2;
+	}
+	.hits-row > :nth-child(4) {
+		grid-row: 2;
+		grid-column: 3;
+	}
+	.hits-row > :nth-child(5) {
+		grid-row: 1;
+		grid-column: 2;
+	}
+}
+.largest-bar--hits span {
+	background: var(--theme--success, var(--success));
+}
+.largest-count--info {
+	cursor: pointer;
 }
 .largest-bar--kept span {
 	background: var(--theme--foreground-subdued, var(--foreground-subdued));
