@@ -164,7 +164,7 @@
 					<div v-if="hitRows.length" class="largest">
 						<span class="label">Hit Rate by Collection</span>
 						<p class="explain">
-							Longer is better. A response that uses several collections counts in each of their rows.
+							How many requests that use the collection got their response from the cache. Higher is better. A response that uses several collections counts in each of their rows.
 						</p>
 						<div v-for="row in hitRows" :key="row.name" class="largest-row hits-row">
 							<span class="largest-name">{{ row.name }}</span>
