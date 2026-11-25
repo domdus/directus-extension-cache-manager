@@ -35,14 +35,17 @@
 					can affect any response.
 				</p>
 			</sidebar-detail>
-			<sidebar-detail id="rules" icon="rule" title="Rules">
+			<sidebar-detail id="rules" icon="rule" title="Purge Ignore Rules">
 				<p class="sidebar-text">
-					<strong>Create, Update, Delete</strong>: which changes clear the cache. Turn off Update where only new or deleted
-					items matter.
+					Without a rule, every change to a collection clears the cached responses that use it. A rule says what to keep.
 				</p>
 				<p class="sidebar-text">
-					<strong>Skip Fields</strong>: a change to only these fields keeps the cache, for example a view counter. Changes
-					to other fields still clear.
+					<strong>Create, Update, Delete</strong>: checked means this kind of change is ignored and doesn't clear the cache. All three checked: the
+					collection never clears.
+				</p>
+				<p class="sidebar-text">
+					<strong>Ignored Fields</strong>: an update that changes only these fields is ignored, for example a view
+					counter. Other updates still clear. Not needed when Update is checked.
 				</p>
 				<p class="sidebar-text">
 					<strong>Lifetime</strong>: how long responses that use this collection stay cached. Write 5m, 1h or 1d; a number
@@ -118,25 +121,24 @@
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="rule" /></template>
-					Rules
+					Purge Ignore Rules
 				</v-divider>
 				<p class="explain">
 					<template v-if="draft.targeted">
 						Optional. Granular mode already keeps everything a change doesn't use. A rule fine-tunes one collection: which of its
-						changes clear and how long its responses stay cached.
+						changes to ignore and how long its responses stay cached.
 					</template>
 					<template v-else>
-						Optional. A rule keeps the cache when a busy collection changes, or sets how long its responses stay cached.
+						Optional. A rule ignores the changes you choose for a busy collection, or sets how long its responses stay cached.
 					</template>
 				</p>
 
 				<div class="toolbar">
 					<v-notice type="info" class="toolbar-notice">
-						Collections without a rule clear on every change and use the global lifetime ({{ formatDurationLabel(data.globalTtl) }}).
-						<template v-if="ignoredWithoutRule.length">
-							Except collections on
-							<span v-tooltip="ignoredWithoutRule.join(', ')" class="ignored-count">CACHE_AUTO_PURGE_IGNORE_LIST</span>.
-						</template>
+						Collections without a rule clear on every change and use the global lifetime ({{ formatDurationLabel(data.globalTtl) }}). A
+						rule ignores the changes you choose, like
+						<span v-if="ignoredWithoutRule.length" v-tooltip="`Already on the list: ${ignoredWithoutRule.join(', ')}`" class="ignored-count">CACHE_AUTO_PURGE_IGNORE_LIST</span>
+						<template v-else>CACHE_AUTO_PURGE_IGNORE_LIST</template>, but per action and field.
 					</v-notice>
 					<div class="add-rule">
 						<v-select :model-value="null" :items="addChoices" :disabled="!addChoices.length" placeholder="Add a rule for…" @update:model-value="onAdd" />
@@ -155,10 +157,13 @@
 						<thead>
 							<tr>
 								<th class="name-col">Collection</th>
-								<th class="center">Create</th>
-								<th class="center">Update</th>
-								<th class="center">Delete</th>
-								<th class="fields-col" v-tooltip="'A change to only these fields keeps the cache'">Skip Fields</th>
+								<th v-for="action in actions" :key="action" class="center" v-tooltip="KEEP_TOOLTIPS[action]">{{ KEEP_LABELS[action] }}</th>
+								<th
+									class="fields-col"
+									v-tooltip="'An update that changes only these fields is ignored, for example a view counter. Other updates still clear.'"
+								>
+									Ignored Fields
+								</th>
 								<th class="ttl-col" v-tooltip="'How long responses that use this collection stay cached. Write 5m, 1h or 1d; a number without a unit is milliseconds.'">Lifetime</th>
 								<th class="action-col" />
 							</tr>
@@ -170,7 +175,7 @@
 							<tr v-for="name in shownNames" :key="name">
 								<td class="name-col">
 									<span class="name">{{ name }}</span>
-									<span class="row-hint">{{ describeRule(draft.collections[name]!) }}</span>
+									<span class="row-hint">{{ describeRule(draft.collections[name]!, fieldsOf(name)) }}</span>
 								</td>
 								<template v-if="ignored.has(name)">
 									<td colspan="4" class="subdued">
@@ -182,9 +187,9 @@
 								<template v-else>
 									<td v-for="action in actions" :key="action" class="center">
 										<v-checkbox
-											:model-value="draft.collections[name]![action]"
-											:aria-label="`Clear on ${action} in ${name}`"
-											@update:model-value="(value) => updateRule(name, { [action]: value })"
+											:model-value="!draft.collections[name]![action]"
+											:aria-label="`Ignore ${action} in ${name}`"
+											@update:model-value="(value) => updateRule(name, { [action]: !value })"
 										/>
 									</td>
 									<td class="fields-col">
@@ -193,9 +198,13 @@
 											:items="fieldChoices(name)"
 											:disabled="!draft.collections[name]!.update"
 											multiple
-											placeholder="Any change clears"
+											:multiple-preview-threshold="1000"
+											:placeholder="draft.collections[name]!.update ? 'None' : 'All ignored'"
 											@update:model-value="(value) => updateRule(name, { skipFields: value ?? [] })"
 										/>
+										<span v-if="skipsAllFields(draft.collections[name]!, fieldsOf(name))" class="field-hint">
+											{{ allSkippedText() }}
+										</span>
 									</td>
 								</template>
 								<td class="ttl-col">
@@ -233,13 +242,20 @@ import { computed, onMounted, ref } from 'vue';
 import ModuleNavigation from './navigation.vue';
 import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
-import { describeRule } from '../shared/rules';
+import { allSkippedText, describeRule, skipsAllFields } from '../shared/rules';
 import { TTL_ERROR, bareMillisecondsHint, formatDurationLabel, formatDurationShort } from '../shared/duration';
 
 const pageClass = usePageClass();
 const { data, draft, loading, saving, error, message, dirty, canSave, invalidTtl, load, save, discard, addRule, removeRule, updateRule } = useRules();
 const dividerStyle = { '--v-divider-color': 'var(--theme--border-color-subdued, var(--border-subdued))' };
 const actions = ['create', 'update', 'delete'] as const;
+/** Checked = keep: the stored rule says what clears (create/update/delete true), the page shows the opposite. */
+const KEEP_LABELS = { create: 'Create', update: 'Update', delete: 'Delete' } as const;
+const KEEP_TOOLTIPS = {
+	create: 'Ignore new items: they don\'t clear the cache. Lists show them only after their lifetime.',
+	update: 'Ignore updates: they don\'t clear the cache. Responses can show old values until their lifetime ends.',
+	delete: 'Ignore deleted items: they don\'t clear the cache. Responses can still show them until their lifetime ends.',
+} as const;
 
 const ruleNames = computed(() => Object.keys(draft.collections).sort());
 
@@ -278,9 +294,12 @@ const saveText = computed(() => {
 	return dirty.value ? 'Save & Apply · Unsaved changes' : 'Save & Apply';
 });
 
+function fieldsOf(collection: string): string[] {
+	return data.value?.collections.find((entry) => entry.name === collection)?.fields ?? [];
+}
+
 function fieldChoices(collection: string) {
-	const fields = data.value?.collections.find((entry) => entry.name === collection)?.fields ?? [];
-	return fields.map((field) => ({ text: field, value: field }));
+	return fieldsOf(collection).map((field) => ({ text: field, value: field }));
 }
 
 function onAdd(name: string | null) {
@@ -400,6 +419,8 @@ p.explain {
 	max-width: 320px;
 }
 .table-wrap {
+	/* Room for the Ignored Fields list of the last rule, which opens downward. */
+	margin-bottom: 22rem;
 	overflow: auto;
 	border: var(--theme--border-width, var(--border-width)) solid var(--theme--border-color-subdued, var(--border-subdued));
 	border-radius: var(--theme--border-radius, var(--border-radius));
@@ -463,7 +484,8 @@ td.center :deep(.v-checkbox) {
 }
 
 th.fields-col,
-th.ttl-col {
+th.ttl-col,
+th.center {
 	cursor: pointer;
 }
 

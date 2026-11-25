@@ -35,8 +35,8 @@
 					If Directus deletes old activity (retention), long periods show less than really happened. The page warns you then.
 				</p>
 				<p class="sidebar-text">
-					Rules that keep only some changes (an action off, Skip Fields) count as clearing, because the activity log doesn't
-					show which fields changed.
+					Rules that keep only some changes (for example only create, or Ignored Fields) count as clearing, because the
+					activity log doesn't show which fields changed.
 				</p>
 			</sidebar-detail>
 			<sidebar-detail v-if="!granular" id="strategy" icon="lightbulb" title="What Never to Clear">
@@ -51,7 +51,7 @@
 			<sidebar-detail id="recommendations" icon="recommend" title="Suggestions">
 				<template v-if="granular">
 					<p class="sidebar-text">
-						A collection gets a suggested rule with Skip Fields (the Potential column) when it changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }}
+						A collection gets a suggested rule with Ignored Fields (grey in the Ignored column) when it changes at least {{ Math.round(RECOMMEND_MIN_SHARE * 60) }}
 						times per hour and most of its changes only touch the same 1 to 3 fields, like a view counter.
 					</p>
 					<p class="sidebar-text">
@@ -104,8 +104,8 @@
 			</v-divider>
 			<p v-if="granular" class="explain intro">
 				Granular mode is on: a change clears only the cached responses of its own collection. For a busy collection, add a
-				rule with Skip Fields or a lifetime. Potential: the share of a collection's changes that keep the cache with the
-				suggested rule.
+				rule with Ignored Fields or a lifetime. Ignored: the share of a collection's changes that don't clear the cache, with
+				its rule or, in grey, with the suggested rule.
 			</p>
 			<p v-else class="explain intro">
 				How often changes cleared the whole cache in the chosen period. Collections with a rule that never clears, or on
@@ -175,7 +175,7 @@
 					</v-divider>
 					<p class="explain intro">
 						These collections change often and clear the cache a lot. Apply adds a rule that never clears. Refine it on
-						<router-link to="/cache-manager/cache">Granular Cache</router-link>, for example with Skip Fields.
+						<router-link to="/cache-manager/cache">Granular Cache</router-link>, for example with Ignored Fields.
 					</p>
 				</template>
 				<div v-if="!granular && analysis.recommendedList.length" class="suggest-row">
@@ -256,7 +256,13 @@
 							<th class="num">Changed in</th>
 							<th v-if="!granular" class="num">If Never Cleared</th>
 							<th>Status</th>
-							<th v-if="granular" class="num">Potential</th>
+							<th
+								v-if="granular"
+								v-tooltip="'Share of the collection\'s changes that don\'t clear the cache. Grey: with the suggested rule.'"
+								class="num ignored-col"
+							>
+								Ignored
+							</th>
 							<th>{{ granular ? 'Rule' : 'Suggestion' }}</th>
 						</tr>
 					</thead>
@@ -286,12 +292,12 @@
 									class="state"
 									:class="stateClass(row)"
 								>
-									{{ ruleOf(row) ? 'Cache rule' : clearsEverything(row) ? 'Clears everything' : ROW_STATE_LABELS[stateOf(row)] }}
+									{{ ruleOf(row) ? 'Ignore rule' : clearsEverything(row) ? 'Clears everything' : ROW_STATE_LABELS[stateOf(row)] }}
 								</span>
 							</td>
-							<td v-if="granular" class="num" data-label="Potential">
-								<span v-if="skipFor(row.collection)" v-tooltip="skipTooltip(skipFor(row.collection)!)" class="potential">
-									{{ Math.round(skipFor(row.collection)!.coveredShare * 100) }} %
+							<td v-if="granular" class="num" data-label="Ignored">
+								<span v-if="ignoredCell(row)" v-tooltip="ignoredCell(row)!.tooltip" class="ignored-value" :class="`ignored-value--${ignoredCell(row)!.tone}`">
+									{{ ignoredCell(row)!.text }}
 								</span>
 								<span v-else class="subdued">–</span>
 							</td>
@@ -358,8 +364,8 @@ import { ROW_STATE_LABELS, looksSensitive, rowState, selectionChanges, suggestio
 import { RECOMMEND_MIN_SHARE } from '../shared/constants';
 import { formatDurationLabel } from '../shared/duration';
 import { ttlVsPurgeText } from '../shared/health';
-import { isTargetable, neverClearCollections, type CollectionRule } from '../shared/rules';
-import { looksSensitiveField, ruleCovers, type SkipSuggestion } from '../shared/skip-fields';
+import { describeRule, isTargetable, neverClearCollections, type CollectionRule } from '../shared/rules';
+import { looksSensitiveField, ruleCovers, SKIP_MIN_COVERED_SHARE, type RuleShare, type SkipSuggestion } from '../shared/skip-fields';
 import { useRules } from './composables/use-rules';
 import {
 	formatTimes,
@@ -491,19 +497,48 @@ function clearsEverything(row: TableRow): boolean {
 	return granular.value && stateOf(row) === 'clears' && !isTargetable(row.collection);
 }
 
-function ruleTooltip(rule: CollectionRule): string {
-	const parts: string[] = [];
-	const off = (['create', 'update', 'delete'] as const).filter((action) => !rule[action]);
-	if (off.length) parts.push(`doesn't clear on ${off.join(', ')}`);
-	if (rule.update && rule.skipFields.length) parts.push(`changes to only ${rule.skipFields.join(', ')} keep the cache`);
-	if (rule.ttl) parts.push(`cached for ${formatDurationLabel(rule.ttl)}`);
-	const what = parts.length ? `Its rule: ${parts.join('; ')}.` : 'It has a rule.';
-	return `${what} The activity log doesn't show which changes the rule kept, so all changes count here. Edit the rule on Granular Cache.`;
+/** How much of the collection's changes its rule ignores, from the activity log; undefined when not measured. */
+function shareOf(row: TableRow): RuleShare | undefined {
+	return analysis.value?.ruleShares?.[row.collection];
+}
+
+/**
+ * The Ignored column: 100 % when the collection never clears, the measured share of its rule, or (grey) what the
+ * suggested rule would ignore.
+ */
+function ignoredCell(row: TableRow): { text: string; tone: 'all' | 'rule' | 'little' | 'suggested'; tooltip: string } | null {
+	const state = stateOf(row);
+	if (state === 'ignored' && row.measured) return { text: '100 %', tone: 'all', tooltip: 'Its changes never clear the cache.' };
+	const rule = ruleOf(row);
+	const share = shareOf(row);
+	if (rule && share) {
+		return { text: `${Math.round(share.share * 100)} %`, tone: ruleIgnoresLittle(row) ? 'little' : 'rule', tooltip: ruleTooltip(rule, share) };
+	}
+	const suggestion = skipFor(row.collection);
+	if (suggestion) return { text: `${Math.round(suggestion.coveredShare * 100)} %`, tone: 'suggested', tooltip: skipTooltip(suggestion) };
+	return null;
+}
+
+/** A rule that ignores less than half of the changes: shown as a warning. */
+function ruleIgnoresLittle(row: TableRow): boolean {
+	const share = shareOf(row);
+	return !!share && share.share < SKIP_MIN_COVERED_SHARE;
+}
+
+const CLEARED_TEXT = { create: 'new items', update: 'updates', delete: 'deleted items' } as const;
+
+function ruleTooltip(rule: CollectionRule, share?: RuleShare): string {
+	const what = `Its rule: ${describeRule(rule)}`;
+	if (!share) return `${what} Edit the rule on Granular Cache.`;
+	const percent = Math.round(share.share * 100);
+	const estimate = share.sample ? ` Updates estimated from the last ${formatNumber(share.sample)}.` : '';
+	const still = share.mostCleared && percent < 100 ? ` Most changes that still clear are ${CLEARED_TEXT[share.mostCleared]}.` : '';
+	return `${what} It ignores ${percent} % of the ${formatNumber(share.total)} changes in this period.${still}${estimate} Changes and Changed in count all changes. Edit the rule on Granular Cache.`;
 }
 
 function stateTooltip(row: TableRow): string | undefined {
 	const rule = ruleOf(row);
-	if (rule) return ruleTooltip(rule);
+	if (rule) return ruleTooltip(rule, shareOf(row));
 	if (clearsEverything(row)) return 'Changes to users, roles, permissions, settings or the data model can change any response, so they clear the whole cache, also in Granular mode.';
 	if (configuredSet.value.has(row.collection)) return 'On the ignore list in the Directus configuration (CACHE_AUTO_PURGE_IGNORE_LIST). Change it there.';
 	if (stateOf(row) === 'unmeasured') return notMeasuredTooltip;
@@ -514,7 +549,8 @@ function stateTooltip(row: TableRow): string | undefined {
 function stateClass(row: TableRow): Record<string, boolean> {
 	const value = stateOf(row);
 	return {
-		'state--rule': !!ruleOf(row),
+		'state--rule': !!ruleOf(row) && !ruleIgnoresLittle(row),
+		'state--rule-little': !!ruleOf(row) && ruleIgnoresLittle(row),
 		'state--ignored': value === 'ignored',
 		'state--everything': clearsEverything(row),
 		'state--clears': value === 'clears' && !ruleOf(row) && row.savedMinutes * 60 >= (analysis.value?.windowMinutes ?? Infinity),
@@ -608,7 +644,7 @@ function skipTooltip(item: SkipSuggestion): string {
 	const sensitive = item.fields.filter(looksSensitiveField);
 	const check = sensitive.length ? ` Check first: apps may need ${sensitive.join(', ')} up to date.` : '';
 	const now = rulesData.value?.config.collections[item.collection] ? 'Its current rule clears on these changes.' : 'Now they all clear it.';
-	return `Suggested rule: Skip Fields ${fields}. With it, ${Math.round(item.coveredShare * 100)} % of the changes to this collection keep the cache. ${now} In cached responses, ${fields} can then be up to ${ttl} old.${check}`;
+	return `Suggested rule: Ignored Fields ${fields}. With it, ${Math.round(item.coveredShare * 100)} % of the changes to this collection keep the cache. ${now} In cached responses, ${fields} can then be up to ${ttl} old.${check}`;
 }
 
 /** Adds the suggested Skip Fields to the collection's rule (a new rule if there is none). Saved with Save & Apply. */
@@ -924,7 +960,7 @@ th {
 	}
 	/* No suggestion or button: leave the field out instead of showing an empty label. */
 	tbody td.action-col:not(:has(.v-button, .badge, .subdued)),
-	tbody td[data-label='Potential']:not(:has(.potential)) {
+	tbody td[data-label='Ignored']:not(:has(.ignored-value)) {
 		display: none;
 	}
 	.minutes,
@@ -965,9 +1001,12 @@ th {
 	background: currentColor;
 }
 /* Keeps cache (ignored): changes never clear the cache. */
-/* Has a rule in Granular mode: Directus blue. */
+/* Has a rule in Granular mode: Directus blue; orange when it ignores less than half of the changes. */
 .state--rule {
 	color: var(--blue, #3399ff);
+}
+.state--rule-little {
+	color: var(--theme--warning, var(--warning));
 }
 .state--everything {
 	color: var(--theme--warning, var(--warning));
@@ -1002,9 +1041,24 @@ th {
 .warning-text {
 	color: var(--theme--warning, var(--warning));
 }
-.potential {
+.ignored-col {
+	cursor: pointer;
+}
+.ignored-value {
 	font-weight: 600;
 	cursor: pointer;
+}
+.ignored-value--all {
+	color: var(--theme--success, var(--success));
+}
+.ignored-value--rule {
+	color: var(--blue, #3399ff);
+}
+.ignored-value--little {
+	color: var(--theme--warning, var(--warning));
+}
+.ignored-value--suggested {
+	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
 
 .rule-cell {

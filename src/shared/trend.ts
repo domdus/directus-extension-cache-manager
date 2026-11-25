@@ -6,7 +6,13 @@ export type TrendTone = 'good' | 'bad' | 'neutral';
 export type Trend = { up: boolean; tone: TrendTone; text: string; tooltip: string };
 
 /** The counters 1 hour ago (see Snapshot in the API). */
-export type TrendSnapshot = { at: string; full: number; targeted: number; skipped: number; fullMinutes: number; hits: number; misses: number };
+export type TrendSnapshot = { at: string; full: number; targeted: number; skipped: number; fullMinutes: number; hits: number; misses: number; timings?: TimingCounts };
+
+/** Response times (see Timings in the API). */
+export type TimingCounts = { hits: number; hitMs: number; misses: number; missMs: number };
+
+/** Below this many timed requests an average jumps too much to show. */
+export const MIN_TIMED_REQUESTS = 10;
 
 /** Below this many requests the hit rate jumps too much to show a trend. */
 export const MIN_REQUESTS_FOR_RATE = 20;
@@ -52,4 +58,55 @@ function durationText(minutes: number): string {
 	if (minutes < 60) return `${Math.round(minutes)} min`;
 	const hours = minutes / 60;
 	return hours < 24 ? `${Math.round(hours)} h` : `${Math.round(hours / 24)} d`;
+}
+
+/** Average milliseconds; null below MIN_TIMED_REQUESTS. */
+export function averageMs(count: number, totalMs: number): number | null {
+	return count >= MIN_TIMED_REQUESTS ? totalMs / count : null;
+}
+
+/** "3 ms", "0.4 ms", "1.2 s". */
+export function msText(ms: number): string {
+	if (ms < 1) return `${(Math.round(ms * 10) / 10).toLocaleString()} ms`;
+	if (ms < 1000) return `${Math.round(ms)} ms`;
+	return `${(Math.round(ms / 100) / 10).toLocaleString()} s`;
+}
+
+/** Time hits saved: each hit took the average miss time minus the average hit time less. null without enough of both. */
+export function timeSavedMs(t: TimingCounts | undefined): number | null {
+	if (!t) return null;
+	const hit = averageMs(t.hits, t.hitMs);
+	const miss = averageMs(t.misses, t.missMs);
+	return hit === null || miss === null ? null : t.hits * Math.max(0, miss - hit);
+}
+
+/** "12 s", "4 min", "2.1 h", "3 days". */
+export function savedText(ms: number): string {
+	const seconds = ms / 1000;
+	if (seconds < 60) return `${Math.round(seconds)} s`;
+	const minutes = seconds / 60;
+	if (minutes < 60) return `${Math.round(minutes)} min`;
+	const hours = minutes / 60;
+	if (hours < 48) return `${(Math.round(hours * 10) / 10).toLocaleString()} h`;
+	return `${Math.round(hours / 24)} days`;
+}
+
+/** An average response time now and 1 hour ago: lower is better. Nothing below a 5 % change. */
+export function avgTimeTrend(count: number, totalMs: number, beforeCount: number | undefined, beforeMs: number | undefined): Trend | null {
+	const current = averageMs(count, totalMs);
+	const before = beforeCount === undefined || beforeMs === undefined ? null : averageMs(beforeCount, beforeMs);
+	if (current === null || before === null || before === 0) return null;
+	const delta = current - before;
+	if (Math.abs(delta) / before < 0.05) return null;
+	const up = delta > 0;
+	return { up, tone: up ? 'bad' : 'good', text: `${up ? '+' : '−'}${msText(Math.abs(delta))}`, tooltip: `1 hour ago: ${msText(before)}` };
+}
+
+/** Time saved in the last hour. */
+export function savedTrend(now: TimingCounts | undefined, before: TimingCounts | undefined): Trend | null {
+	const current = timeSavedMs(now);
+	const earlier = before ? timeSavedMs(before) ?? 0 : null;
+	if (current === null || earlier === null || current - earlier < 1000) return null;
+	const delta = current - earlier;
+	return { up: true, tone: 'good', text: `+${savedText(delta)}`, tooltip: `${savedText(delta)} saved in the last hour` };
 }

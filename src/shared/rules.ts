@@ -225,15 +225,40 @@ function normalize(config: RulesConfig) {
 	};
 }
 
-/** Short text for a rule, e.g. "Clears on create and delete · keeps the cache when only views_count changes · answers stay 5 minutes". */
-export function describeRule(rule: CollectionRule): string {
-	const on = (['create', 'update', 'delete'] as const).filter((action) => rule[action]);
+/** Ignored Fields lists every field of the collection: no change to an existing item can clear. `fields`: the collection's fields, when known. */
+export function skipsAllFields(rule: CollectionRule, fields?: string[]): boolean {
+	return rule.update && !!fields?.length && fields.every((field) => rule.skipFields.includes(field));
+}
+
+/** Note under Ignored Fields when every field is selected. */
+export function allSkippedText(): string {
+	return 'Every field is selected: same as checking Update.';
+}
+
+function joinAnd(items: string[]): string {
+	return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * What a rule ignores, in one simple sentence: "Ignores create and updates that change only views_count. Cached for
+ * 5 minutes." Everything it doesn't ignore clears, as without a rule. `fields`: the collection's fields, to tell when
+ * Ignored Fields lists every field (same as ignoring updates).
+ */
+export function describeRule(rule: CollectionRule, fields?: string[]): string {
+	const allSkipped = skipsAllFields(rule, fields);
+	const kept = (['create', 'update', 'delete'] as const).filter((action) => !rule[action] || (action === 'update' && allSkipped));
+	const partial = rule.update && rule.skipFields.length > 0 && !allSkipped;
 	const parts: string[] = [];
-	if (!on.length) parts.push('Never clears');
-	else if (on.length < 3) parts.push(`Clears on ${on.join(' and ')}`);
-	if (rule.update && rule.skipFields.length) parts.push(`keeps the cache when only ${rule.skipFields.join(', ')} ${rule.skipFields.length === 1 ? 'changes' : 'change'}`);
-	if (rule.ttl) parts.push(`cached for ${formatDurationLabel(rule.ttl)}`);
-	return parts.join(' · ') || 'Same as without a rule: every change clears';
+	if (kept.length === 3) parts.push('Ignores every change.');
+	else if (kept.length || partial) {
+		const what = [
+			...(kept.length ? [joinAnd(kept)] : []),
+			...(partial ? [`updates that change only ${rule.skipFields.join(', ')}`] : []),
+		];
+		parts.push(`Ignores ${what.join(' and ')}.`);
+	} else parts.push('Ignores nothing yet.');
+	if (rule.ttl) parts.push(`Cached for ${formatDurationLabel(rule.ttl)}.`);
+	return parts.join(' ');
 }
 
 /** One line for the log. */

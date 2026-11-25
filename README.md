@@ -13,9 +13,9 @@ Measured on a website-like setup, see [Performance](#performance).
 
 - **Granular Cache**: a change clears only the cached responses that use the changed collection, including through relations. Works for REST and GraphQL.
 - **Clear single items** (advanced): a change to one item keeps the cached single-item responses of all other items.
-- **Rules per collection**: choose which changes clear, ignore fields like a view counter, and set a lifetime per collection.
+- **Purge ignore rules per collection**: like `CACHE_AUTO_PURGE_IGNORE_LIST`, but per action and field: ignore new, updated or deleted items, or updates to fields like a view counter, and set a lifetime per collection.
 - **Analysis**: which collections change how often, with suggested rules.
-- **Statistics**: what each change cleared, the hit rate per collection, the cache size, what a change to each collection clears, and the last 24 hours.
+- **Statistics**: what each change cleared, the hit rate per collection, the cache size, which collections cleared the most, and the last 24 hours.
 - **Cache settings in the Data Studio**: Auto Purge, Skip Cache and the cache lifetime, applied without a restart.
 - **Several Directus servers**: with a Redis cache, all servers share what to clear and pick up saved settings.
 - **Export and import** of all settings.
@@ -56,17 +56,23 @@ Changes to users, roles, permissions, settings, flows or the data model still cl
 
 With this on, a change to page 5 only clears the single-item responses of page 5, such as `/items/pages/5` or GraphQL `pages_by_id` (GraphQL works this way on newer Directus versions, tested on 11.17 and 12.5; on older ones it clears with the collection). Single-item responses of other pages stay; lists of pages still clear. It helps when a collection is read item by item and its items change often, such as stock or prices. See [Performance](#clear-single-items).
 
-### Rules per collection
+### Purge ignore rules per collection
 
-Most projects need no rules. Add one for a collection that changes very often:
+Without a rule, every change to a collection clears the cached responses that use it. Directus can only ignore a whole collection (`CACHE_AUTO_PURGE_IGNORE_LIST`). A rule ignores the changes you choose, per action and field. Most projects need no rules; add one for a collection that changes very often:
 
 | Setting | What it does | Example |
 |---|---|---|
-| **Create, Update, Delete** | Which changes clear. All off: changes never clear | Turn off Update where only new or deleted items matter |
-| **Skip Fields** | A change that only touches these fields keeps the cache | `views_count`: counting a view keeps the cache, a new title clears it |
+| **Create, Update, Delete** | Checked: this kind of change is ignored and doesn't clear. All three checked: like the ignore list | Check Update where only new or deleted items matter |
+| **Ignored Fields** | An update that changes only these fields is ignored. Other updates still clear | `views_count`: counting a view is ignored, a new title clears |
 | **Lifetime** | How long responses that use this collection stay cached | `5m` for a collection that never clears, `1d` for pages that rarely change |
 
-Prefer a small rule over "never clear". Never clearing `videos` because of a view counter also hides new videos until the cache expires. Skip Fields `views_count` still shows them right away.
+Each rule shows what it ignores in one line, for example "Ignores updates that change only views_count." Everything else clears, as without a rule.
+
+Prefer a small rule over ignoring everything. Ignoring every change to `videos` because of a view counter also hides new videos until the cache expires. Ignored Fields `views_count` still shows them right away.
+
+The Data Studio always shows current data for collections with a rule: like Directus does for `CACHE_AUTO_PURGE_IGNORE_LIST`, it doesn't use the cache for them. Apps still do.
+
+Saving a parent with its related items (for example an offer with its items) saves existing items as updates, so Ignored Fields apply. A new item counts as created.
 
 ## Analysis
 
@@ -76,9 +82,9 @@ Reads the Directus activity log for the last hour up to the last 7 days and list
 
 **In Granular mode**, a change only clears the responses of its own collection, so the page helps with busy collections:
 
-- **Potential**: most changes to this collection only touch the same few fields, such as a view counter. With a rule that has these Skip Fields, this share of its changes keeps the cache.
+- **Ignored**: the share of a collection's changes that don't clear the cache. 100 % for collections that never clear; for a collection with a rule, how much the rule ignored in the period (orange below 50 %); in grey, how much a suggested rule would ignore, when most changes only touch the same few fields, such as a view counter.
 - **Add Suggested Rule** adds that rule; **Add Rule** adds one with default settings. Both open it on **Granular Cache** for a check before saving.
-- **Cache rule** in the Status column: the collection has a rule that keeps some of its changes. **Clears everything**: users, roles, permissions, settings and the data model still clear the whole cache.
+- **Ignore rule** in the Status column: the collection has a rule that ignores some of its changes. **Clears everything**: users, roles, permissions, settings and the data model still clear the whole cache.
 
 **In Global mode**, every change clears the whole cache. The page shows how often that happened and suggests collections that should never clear:
 
@@ -92,13 +98,14 @@ Collections with activity tracking turned off show **Not measured**. Changes tha
 
 <img alt="Cache Manager — Statistics" src="https://raw.githubusercontent.com/domdus/directus-extension-cache-manager/main/docs/statistics.png" width="800" />
 
-What happened since Directus started: global cache clears, granular clears, changes a rule kept, and the latest events with their reason. The numbers reset when Directus restarts.
+What happened since Directus started: global cache clears, granular clears, changes a rule ignored, and the latest events with their reason. The numbers reset when Directus restarts.
 
 Each number shows how it changed in the last hour, like a stock price: green is better, red is worse, grey is neither.
 
 - **Cache Hits**: how often apps got a response from the cache. **Hit Rate** is hits ÷ (hits + misses). A miss is a response that wasn't in the cache, so Directus built and stored it. **Fresh Requests** asked for the latest data with `Cache-Control: no-store` and skip the cache; they don't count as misses. In Granular mode, **Hit Rate by Collection** shows the same per collection. With Redis, only the totals are counted.
+- **Response times**: **Avg Hit Time** and **Avg Miss Time** show how long Directus took to answer from the cache and without it. **Time Saved** is hits × (avg miss time − avg hit time). Network time to the app isn't included. Hit Rate by Collection shows both times per collection, and the **Avg Response Time** chart shows them per hour.
 - **Cache Size** (cache in memory): size, number of cached responses, the largest size in the last 24 hours, and expired responses deleted.
-- **What a Change Clears**: per collection, the cached responses that use it, their share of the cache, and how often the collection changes. A change to the collection clears them, so shorter bars are better; a long bar with many changes per hour empties the cache often. A response that uses several collections counts in each row, so the rows add up to more than the total. **Kept**: the collection never clears.
+- **Cleared by Changes**: per collection, how many cached responses its changes removed since Directus started, and how many changes that took. Orange: changes that cleared the whole cache. Together with Hit Rate by Collection, it shows which collection costs the cache the most.
 - **Last 24 Hours**: changes per hour by result, hits and misses per hour, and with the cache in memory the cache size per hour.
 
 ## Settings on Status
@@ -134,7 +141,7 @@ Directus 11.17 with Postgres and the cache in memory, on a website-like setup: 2
 | Database queries | 31,422 | **762** | **−98 %** |
 | Database CPU time | 8.7 s | **0.6 s** | **−93 %** |
 
-If visits are counted in a field on the pages (`views_count`), add a rule with Skip Fields `views_count`. The results are then the same as above.
+If visits are counted in a field on the pages (`views_count`), add a rule with Ignored Fields `views_count`. The results are then the same as above.
 
 ### Two Directus servers with Redis
 

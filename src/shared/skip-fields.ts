@@ -89,3 +89,45 @@ export function ruleCovers(rule: { update: boolean; skipFields: string[] } | und
 	if (!rule) return false;
 	return !rule.update || fields.every((field) => rule.skipFields.includes(field));
 }
+
+/** How much of a collection's changes its rule ignores, from the activity log (updates estimated from a sample). */
+export type RuleShare = {
+	/** Share of all changes in the period the rule ignores, 0 to 1. */
+	share: number;
+	/** Changes in the period (create, update, delete). */
+	total: number;
+	/** Update revisions the estimate for Ignored Fields is based on (0 when not needed). */
+	sample: number;
+	/** The action whose changes still clear most often, for the tooltip. */
+	mostCleared: 'create' | 'update' | 'delete' | null;
+};
+
+/**
+ * `counts`: changes per action in the period. `updates`: changed fields of sampled update revisions. An update is
+ * ignored when the rule ignores updates, or when it changes only Ignored Fields.
+ */
+export function ruleShare(
+	rule: { create: boolean; update: boolean; delete: boolean; skipFields: string[] },
+	counts: { create: number; update: number; delete: number },
+	updates: string[][],
+): RuleShare | null {
+	const total = counts.create + counts.update + counts.delete;
+	if (!total) return null;
+	const ignored = { create: rule.create ? 0 : counts.create, update: 0, delete: rule.delete ? 0 : counts.delete };
+	let sample = 0;
+	if (!rule.update) ignored.update = counts.update;
+	else if (rule.skipFields.length && counts.update) {
+		const shaped = updates.filter((fields) => fields.length > 0);
+		sample = shaped.length;
+		const covered = shaped.filter((fields) => fields.every((field) => rule.skipFields.includes(field))).length;
+		ignored.update = sample ? Math.round((covered / sample) * counts.update) : 0;
+	}
+	const cleared = (['create', 'update', 'delete'] as const).map((action) => [action, counts[action] - ignored[action]] as const);
+	const top = cleared.reduce((best, entry) => (entry[1] > best[1] ? entry : best));
+	return {
+		share: (ignored.create + ignored.update + ignored.delete) / total,
+		total,
+		sample,
+		mostCleared: top[1] > 0 ? top[0] : null,
+	};
+}

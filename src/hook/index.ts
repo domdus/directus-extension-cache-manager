@@ -1,6 +1,6 @@
 import { defineHook } from '@directus/extensions-sdk';
 import { applyEffective, captureBaseline, describe, ensureSettingsField, markStartupApplied, migrateIgnoreList, readRules, readStored, startupApplied, type ApiContext } from '../api/state';
-import { installTargeted, requestMiddleware, runtime } from '../api/targeted';
+import { dataStudioMiddleware, installTargeted, requestMiddleware, runtime } from '../api/targeted';
 import { startSettingsSync } from '../api/sync';
 import { describeRules } from '../shared/rules';
 import { LOG_PREFIX } from '../shared/constants';
@@ -21,7 +21,7 @@ export default defineHook(({ init }, context) => {
 	async function installRules() {
 		try {
 			const rules = await readRules(ctx.database);
-			await installTargeted(ctx, rules);
+			await installTargeted(ctx, rules, reloaded ? 'reload' : 'startup');
 			ctx.logger.info(`${LOG_PREFIX} granular cache: ${describeRules(rules)}`);
 		} catch (error) {
 			// Without the patches Directus clears the whole cache as usual.
@@ -48,6 +48,9 @@ export default defineHook(({ init }, context) => {
 		})();
 		if (!runtime().middlewareRegistered) {
 			ctx.logger.warn(`${LOG_PREFIX} extension reloaded without a restart: restart Directus to use Granular mode`);
+		} else if ((runtime().middlewareVersion ?? 0) < 2) {
+			// Registered by a version before 1.2.0: it keeps that version's request code until Directus restarts.
+			ctx.logger.warn(`${LOG_PREFIX} extension updated without a restart: restart Directus once so the request tracking uses the new version`);
 		}
 	}
 
@@ -68,6 +71,11 @@ export default defineHook(({ init }, context) => {
 		await installRules();
 		// Other Directus servers may save settings or rules: pick them up without a restart.
 		startSettingsSync(ctx);
+	});
+
+	// Before Directus' cache check: marks Data Studio requests, which skip the cache for collections with a rule.
+	init('middlewares.before', ({ app }: any) => {
+		app.use(dataStudioMiddleware());
 	});
 
 	// After Directus' cache check, before the routes: records what each answer depends on.

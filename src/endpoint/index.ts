@@ -4,7 +4,7 @@ import { buildAnalysis, isRecommendable, parseHours, toBuckets, type Analysis } 
 import { activityRetentionHours, liveGaps, unmeasuredCollections } from '../shared/coverage';
 import { parseDuration } from '../shared/duration';
 import { DEFAULT_HOURS, EXTENSION_ID, LOG_PREFIX, MAX_HOURS, RECOMMEND_MIN_SHARE, WRITE_ACTIONS } from '../shared/constants';
-import { AUTO_SPECIALS, SKIP_SAMPLE_SIZE, changedFields, suggestSkipFields, type SkipSuggestion } from '../shared/skip-fields';
+import { AUTO_SPECIALS, SKIP_SAMPLE_SIZE, changedFields, ruleShare, suggestSkipFields, type RuleShare, type SkipSuggestion } from '../shared/skip-fields';
 import { isEmptyOverride, mergeValues, readValues, sameValues, validateInput, type StoredOverride } from '../shared/settings';
 import {
 	applyEffective,
@@ -21,7 +21,7 @@ import {
 } from '../api/state';
 import { applyRules, runtimeStatus, statusWithFreshSize } from '../api/targeted';
 import { rememberSaved } from '../api/sync';
-import { DEFAULT_RULES, describeRules, isTargetable, neverClearCollections, validateRules } from '../shared/rules';
+import { DEFAULT_RULES, describeRules, isDefaultRule, isTargetable, neverClearCollections, neverClears, validateRules } from '../shared/rules';
 
 /** Collections checked for Skip Fields suggestions per analysis (the busiest first). */
 const MAX_SKIP_COLLECTIONS = 10;
@@ -108,6 +108,52 @@ export default defineEndpoint({
 		}
 
 		router.get('/state', wrap(state));
+
+		/** Changes per action in the period, from the activity log. */
+		async function actionCounts(collection: string, from: Date): Promise<{ create: number; update: number; delete: number }> {
+			const rows = await database('directus_activity')
+				.select('action')
+				.count({ total: '*' })
+				.where('collection', collection)
+				.where('timestamp', '>=', from)
+				.whereIn('action', WRITE_ACTIONS)
+				.groupBy('action');
+			const of = (action: string) => Number(rows.find((row: any) => row.action === action)?.total ?? 0);
+			return { create: of('create'), update: of('update'), delete: of('delete') };
+		}
+
+		/** Changed fields of the latest update revisions (without the primary key and fields Directus fills in). */
+		async function updateSample(collection: string, info: any, from: Date): Promise<string[][]> {
+			const exclude = new Set<string>([info.primary]);
+			for (const [name, field] of Object.entries<any>(info.fields ?? {})) {
+				const special: string[] = Array.isArray(field?.special) ? field.special : [];
+				if (special.some((value) => AUTO_SPECIALS.includes(value))) exclude.add(name);
+			}
+			const revisions = await database('directus_revisions as r')
+				.join('directus_activity as a', 'a.id', 'r.activity')
+				.select('r.delta')
+				.where('a.collection', collection)
+				.where('a.action', 'update')
+				.where('a.timestamp', '>=', from)
+				.orderBy('a.id', 'desc')
+				.limit(SKIP_SAMPLE_SIZE);
+			return revisions.map((row: any) => changedFields(row.delta, exclude));
+		}
+
+		/** For each rule that ignores some changes: the share of the collection's changes it ignores. */
+		async function ruleShares(schema: any, from: Date): Promise<Record<string, RuleShare>> {
+			const rules = await readRules(database);
+			const shares: Record<string, RuleShare> = {};
+			for (const [collection, rule] of Object.entries(rules.collections)) {
+				const info = schema.collections?.[collection];
+				if (!info || neverClears(rule) || isDefaultRule(rule)) continue;
+				const counts = await actionCounts(collection, from);
+				const sample = rule.update && rule.skipFields.length && counts.update ? await updateSample(collection, info, from) : [];
+				const share = ruleShare(rule, counts, sample);
+				if (share) shares[collection] = share;
+			}
+			return shares;
+		}
 
 		/** Busy collections whose changes mostly touch the same few fields, from a sample of their update revisions. */
 		async function skipSuggestions(analysis: Analysis, schema: any, from: Date): Promise<SkipSuggestion[]> {
@@ -208,6 +254,11 @@ export default defineEndpoint({
 					result.liveGaps = liveGaps(live.liveWrites ?? {}, Object.fromEntries(logged.map((row: any) => [String(row.collection), Number(row.total)])));
 				} catch (error) {
 					ctx.logger.warn(`${LOG_PREFIX} live check failed: ${(error as Error)?.message ?? error}`);
+				}
+				try {
+					result.ruleShares = await ruleShares(schema, from);
+				} catch (error) {
+					ctx.logger.warn(`${LOG_PREFIX} could not measure the rules: ${(error as Error)?.message ?? error}`);
 				}
 				try {
 					result.skipSuggestions = await skipSuggestions(result, schema, from);

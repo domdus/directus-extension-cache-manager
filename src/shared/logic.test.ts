@@ -275,15 +275,14 @@ test('duration labels always include a unit; a bare number is milliseconds', asy
 	assert.equal(bareMillisecondsHint('2h'), null);
 });
 
-test('describeRule names the lifetime with a unit', async () => {
+test('describeRule says what the rule ignores, in one sentence', async () => {
 	const { describeRule, DEFAULT_RULE } = await import('./rules');
-	assert.equal(describeRule({ ...DEFAULT_RULE, ttl: '2' }), 'cached for 2 milliseconds');
-	assert.equal(describeRule({ ...DEFAULT_RULE, ttl: '2h' }), 'cached for 2 hours');
-	assert.equal(describeRule({ ...DEFAULT_RULE, ttl: '5m' }), 'cached for 5 minutes');
-	assert.equal(
-		describeRule({ create: true, update: false, delete: true, skipFields: [], ttl: '1h' }),
-		'Clears on create and delete · cached for 1 hour',
-	);
+	assert.equal(describeRule({ ...DEFAULT_RULE, ttl: '2h' }), 'Ignores nothing yet. Cached for 2 hours.');
+	assert.equal(describeRule({ create: true, update: false, delete: true, skipFields: [], ttl: '1h' }), 'Ignores update. Cached for 1 hour.');
+	assert.equal(describeRule({ create: false, update: false, delete: false, skipFields: [], ttl: null }), 'Ignores every change.');
+	assert.equal(describeRule({ create: false, update: true, delete: false, skipFields: [], ttl: null }), 'Ignores create and delete.');
+	assert.equal(describeRule({ ...DEFAULT_RULE, skipFields: ['lifetime_days', 'lifetime_hours'] }), 'Ignores updates that change only lifetime_days, lifetime_hours.');
+	assert.equal(describeRule({ ...DEFAULT_RULE, create: false, skipFields: ['views_count'] }), 'Ignores create and updates that change only views_count.');
 });
 
 test('validateInput checks ttl', () => {
@@ -600,4 +599,55 @@ test('trend: hit rate in points, only with enough requests', () => {
 	assert.equal(hitRateTrend(120, 80, hourAgo), null);
 	assert.equal(hitRateTrend(130, 70, { ...hourAgo, hits: 5, misses: 5 }), null);
 	assert.equal(hitRate(5, 5), null);
+});
+
+test('describeRule: selecting every field is the same as keeping updates', async () => {
+	const { describeRule, skipsAllFields, allSkippedText, DEFAULT_RULE } = await import('./rules');
+	const rule = { ...DEFAULT_RULE, skipFields: ['id', 'item', 'offers_id'] };
+	assert.equal(skipsAllFields(rule, ['id', 'item', 'offers_id']), true);
+	assert.equal(skipsAllFields(rule, ['id', 'item', 'offers_id', 'title']), false);
+	assert.equal(skipsAllFields(rule), false);
+	assert.equal(describeRule(rule, ['id', 'item', 'offers_id']), 'Ignores update.');
+	assert.equal(allSkippedText(), 'Every field is selected: same as checking Update.');
+});
+
+test('ruleShare: how much of the changes a rule ignores', async () => {
+	const { ruleShare } = await import('./skip-fields');
+	const base = { create: true, update: true, delete: true, skipFields: [] as string[] };
+	// Ignores updates that change only lifetime fields: 1 of 4 sampled updates.
+	const sub = ruleShare({ ...base, skipFields: ['lifetime_days', 'lifetime_hours'] }, { create: 100, update: 800, delete: 100 }, [
+		['lifetime_days'],
+		['status'],
+		['status', 'lifetime_days'],
+		['date_end'],
+	])!;
+	assert.equal(sub.share, 0.2);
+	assert.equal(sub.sample, 4);
+	assert.equal(sub.mostCleared, 'update');
+	// Ignores create and update: only deletes clear.
+	const items = ruleShare({ ...base, create: false, update: false }, { create: 300, update: 10, delete: 0 }, [])!;
+	assert.equal(items.share, 1);
+	assert.equal(items.mostCleared, null);
+	assert.equal(ruleShare(base, { create: 0, update: 0, delete: 0 }, []), null);
+});
+
+test('response times: averages, time saved and trends', async () => {
+	const { averageMs, msText, timeSavedMs, savedText, avgTimeTrend, savedTrend } = await import('./trend');
+	assert.equal(averageMs(9, 90), null, 'too few requests');
+	assert.equal(averageMs(10, 45), 4.5);
+	assert.equal(msText(0.42), `${(0.4).toLocaleString()} ms`);
+	assert.equal(msText(85.4), '85 ms');
+	assert.equal(msText(1250), `${(1.3).toLocaleString()} s`);
+	assert.equal(timeSavedMs({ hits: 100, hitMs: 300, misses: 10, missMs: 830 }), 100 * 80);
+	assert.equal(timeSavedMs({ hits: 100, hitMs: 300, misses: 2, missMs: 830 }), null);
+	assert.equal(savedText(8000), '8 s');
+	assert.equal(savedText(7_560_000), `${(2.1).toLocaleString()} h`);
+	assert.equal(avgTimeTrend(10, 50, 10, 100)!.tone, 'good', 'faster is better');
+	assert.equal(avgTimeTrend(10, 100, 10, 50)!.tone, 'bad');
+	assert.equal(avgTimeTrend(10, 101, 10, 100), null, 'below 5 % no arrow');
+	assert.equal(avgTimeTrend(10, 50, undefined, undefined), null);
+	const now = { hits: 1000, hitMs: 3000, misses: 100, missMs: 8300 };
+	const before = { hits: 500, hitMs: 1500, misses: 50, missMs: 4150 };
+	assert.equal(savedTrend(now, before)!.text, '+40 s');
+	assert.equal(savedTrend(now, undefined), null);
 });

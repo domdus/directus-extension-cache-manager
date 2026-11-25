@@ -83,9 +83,9 @@
 						<span class="stat-value">{{ formatNumber(data.status.counts.skipped) }}</span>
 						<stat-trend :trend="trends.skipped" />
 						<span class="stat-label">
-							Kept by Rule
+							Ignored by Rule
 							<v-icon
-								v-tooltip.top="'Changes that cleared nothing because of a rule.'"
+								v-tooltip.top="'Changes a rule ignored: they cleared nothing.'"
 								name="help_outline"
 								small
 								class="stat-info"
@@ -161,10 +161,51 @@
 							</span>
 						</div>
 					</section>
+					<section v-if="speed" class="summary-bar" aria-label="Response times">
+						<div class="stat">
+							<span class="stat-value">{{ speed.hit === null ? '–' : msText(speed.hit) }}</span>
+							<stat-trend :trend="trends.hitTime" />
+							<span class="stat-label">
+								Avg Hit Time
+								<v-icon
+									v-tooltip.top="speed.hit === null ? `Shown from ${MIN_TIMED_REQUESTS} hits on.` : 'Average time Directus took to answer from the cache. Network time to the app is not included.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+						<div class="stat">
+							<span class="stat-value">{{ speed.miss === null ? '–' : msText(speed.miss) }}</span>
+							<stat-trend :trend="trends.missTime" />
+							<span class="stat-label">
+								Avg Miss Time
+								<v-icon
+									v-tooltip.top="speed.miss === null ? `Shown from ${MIN_TIMED_REQUESTS} misses on.` : 'Average time Directus took to build a response that wasn\'t in the cache. Network time to the app is not included.'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+						<div class="stat">
+							<span class="stat-value">{{ speed.saved === null ? '–' : savedText(speed.saved) }}</span>
+							<stat-trend :trend="trends.saved" />
+							<span class="stat-label">
+								Time Saved
+								<v-icon
+									v-tooltip.top="'Time the cache saved since Directus started: hits × (avg miss time − avg hit time).'"
+									name="help_outline"
+									small
+									class="stat-info"
+								/>
+							</span>
+						</div>
+					</section>
 					<div v-if="hitRows.length" class="largest">
 						<span class="label">Hit Rate by Collection</span>
 						<p class="explain">
-							How many requests that use the collection got their response from the cache. Higher is better. A response that uses several collections counts in each of their rows.
+							How many requests that use the collection got their response from the cache. Higher is better. A response that uses several collections counts in each of their rows. Times: average hit / miss time.
 						</p>
 						<div v-for="row in hitRows" :key="row.name" class="largest-row hits-row">
 							<span class="largest-name">{{ row.name }}</span>
@@ -179,6 +220,14 @@
 								{{ formatNumber(row.fresh) }} fresh
 							</span>
 							<span v-else class="largest-count" />
+							<span
+								v-if="row.time"
+								v-tooltip="`Average response time: ${row.time.hit === null ? '–' : msText(row.time.hit)} from the cache, ${row.time.miss === null ? '–' : msText(row.time.miss)} without.`"
+								class="largest-count largest-time"
+							>
+								{{ row.time.hit === null ? '–' : msText(row.time.hit) }} / {{ row.time.miss === null ? '–' : msText(row.time.miss) }}
+							</span>
+							<span v-else class="largest-count largest-time" />
 							<span class="largest-share">{{ row.rate === null ? '' : `${Math.round(row.rate * 100)} %` }}</span>
 						</div>
 					</div>
@@ -243,7 +292,6 @@
 							</span>
 						</div>
 					</section>
-					<p v-if="!largest.length && !data.status.targetedActive" class="meta">Size per collection is shown in Granular mode only.</p>
 				</template>
 				<p v-else class="explain intro">
 					<template v-if="data.status.store === 'memory'">No size while the cache is off.</template>
@@ -252,48 +300,38 @@
 						shared by all Directus servers.
 					</template>
 				</p>
-				<div v-if="largest.length" class="largest">
-					<span class="label">What a Change Clears</span>
+				<div v-if="clearedRows.length" class="largest">
+					<span class="label">Cleared by Changes</span>
 					<p class="explain">
-						Shorter is better: bar and % show how much of the cache a change to the collection clears. A long bar with many
-						changes per hour (orange) empties the cache often. A response that uses several collections counts in each of
-						their rows, so the rows add up to more than 100 %.
+						Cached responses that changes to each collection removed since Directus started, the most first. Orange: changes
+						that cleared the whole cache.
 					</p>
-					<div v-for="row in largest" :key="row.name" class="largest-row">
+					<div v-for="row in clearedRows" :key="row.name" class="largest-row cleared-row">
 						<span class="largest-name">{{ row.name }}</span>
-						<span class="largest-bar" :class="{ 'largest-bar--kept': row.kept }"><span :style="{ inlineSize: `${row.bar * 100}%` }" /></span>
+						<span class="largest-bar" :class="{ 'largest-bar--full': row.full > 0 }"><span :style="{ inlineSize: `${row.bar * 100}%` }" /></span>
+						<span class="largest-count">{{ formatNumber(row.changes) }} {{ row.changes === 1 ? 'change' : 'changes' }}</span>
+						<span class="largest-count">{{ formatNumber(row.removedTotal) }} {{ row.removedTotal === 1 ? 'response' : 'responses' }}</span>
 						<span
-							v-tooltip="`${changesLabel} since Directus started (${new Date(data.status.since).toLocaleString()})${data.status.shared ? ', counted on this server' : ''}.`"
-							class="largest-rate"
-							:class="{ 'largest-rate--busy': !row.kept && row.rate.perHour && row.rate.value >= BUSY_PER_HOUR }"
+							v-if="row.full"
+							v-tooltip="`${formatNumber(row.full)} of its changes cleared the whole cache (${formatNumber(row.fullRemoved)} cached responses).`"
+							class="largest-count cleared-full"
 						>
-							<template v-if="row.rate.perHour">{{ row.rate.value < 1 ? '<1' : formatNumber(Math.round(row.rate.value)) }} changes/h</template>
-							<template v-else>{{ formatNumber(row.rate.value) }} {{ row.rate.value === 1 ? 'change' : 'changes' }}</template>
+							whole cache {{ formatNumber(row.full) }}×
 						</span>
-						<span class="largest-count">{{ formatNumber(row.count) }} {{ row.count === 1 ? 'response' : 'responses' }}</span>
-						<span class="largest-value">{{ row.bytes === null ? '' : formatBytes(row.bytes) }}</span>
 						<span
-							v-if="row.kept"
-							v-tooltip="'Its changes never clear the cache (a never-clear rule or CACHE_AUTO_PURGE_IGNORE_LIST). The size is what a change would clear without it.'"
-							class="largest-share largest-share--kept"
+							v-else-if="row.ignored"
+							v-tooltip="`${formatNumber(row.ignored)} of its changes were ignored by its rule and cleared nothing.`"
+							class="largest-count cleared-ignored"
 						>
-							Kept
+							{{ formatNumber(row.ignored) }} ignored
 						</span>
-						<span v-else class="largest-share">{{ row.share === null ? '' : `${Math.round(row.share * 100)} %` }}</span>
+						<span v-else class="largest-count" />
 					</div>
-					<p v-if="untraced" class="explain largest-note">
-						Every change also clears {{ formatNumber(untraced.count) }}
-						{{ untraced.count === 1 ? 'response' : 'responses' }}<template v-if="untraced.bytes !== null"> ({{ formatBytes(untraced.bytes) }})</template>
-						that Cache Manager can't trace to a collection, such as custom endpoints.
-					</p>
-					<p v-if="data.config.items && data.status.targetedActive" class="explain largest-note">
-						Clear single items is on: single-item responses (such as /items/pages/5) count in their collection's row, but a
-						change only clears those of the changed item.
-					</p>
 					<p v-if="data.status.shared" class="explain largest-note">
-						With Redis, the total number of cached responses isn't known, so the rows show no share of the cache.
+						With Redis, the number of responses a whole-cache clear removed isn't known.
 					</p>
 				</div>
+				<p v-else-if="data.status.targetedActive" class="meta">No change has cleared anything yet.</p>
 
 				<v-divider class="section-divider add-margin-top" large :inline-title="false" :style="dividerStyle">
 					<template #icon><v-icon name="bar_chart" /></template>
@@ -303,6 +341,7 @@
 				<div class="charts">
 					<hour-bars title="Changes" :columns="clearColumns" :legend="clearLegend" :format="(v) => formatNumber(v)" empty-text="No changes yet." />
 					<hour-bars v-if="reads" title="Hits and Misses" :columns="hitColumns" :legend="hitLegend" :format="(v) => formatNumber(v)" empty-text="No cached requests yet." />
+					<hour-bars v-if="speed" title="Avg Response Time" :columns="timeColumns" :legend="timeLegend" :format="msText" grouped empty-text="No timed requests yet." />
 					<hour-bars v-if="data.status.size" title="Cache Size" :columns="sizeColumns" :legend="sizeLegend" :format="formatBytes" empty-text="The cache is empty." />
 				</div>
 
@@ -349,9 +388,8 @@ import { useRules } from './composables/use-rules';
 import { usePageClass } from './composables/use-page-class';
 import { emptiedEveryLabel, sizeVsClearsText } from '../shared/health';
 import { groupEvents, type GroupedEvent } from '../shared/events';
-import { neverClearCollections } from '../shared/rules';
 import { formatBytes, formatNumber } from '../shared/format';
-import { countTrend, emptiedTrend, hitRate, hitRateTrend, MIN_REQUESTS_FOR_RATE } from '../shared/trend';
+import { averageMs, avgTimeTrend, countTrend, emptiedTrend, hitRate, hitRateTrend, MIN_REQUESTS_FOR_RATE, MIN_TIMED_REQUESTS, msText, savedText, savedTrend, timeSavedMs } from '../shared/trend';
 import StatTrend from './stat-trend.vue';
 
 const pageClass = usePageClass();
@@ -377,12 +415,20 @@ const emptiedEvery = computed(() => {
 const reads = computed(() => data.value?.status.reads ?? null);
 const hitRateValue = computed(() => (reads.value ? hitRate(reads.value.hits, reads.value.misses) : null));
 
+/** Average hit and miss time and the time saved; null before the first timed request (or with an older API). */
+const speed = computed(() => {
+	const t = data.value?.status.timings;
+	if (!t || t.hits + t.misses === 0) return null;
+	return { hit: averageMs(t.hits, t.hitMs), miss: averageMs(t.misses, t.missMs), saved: timeSavedMs(t) };
+});
+
 /** Each number compared with 1 hour ago (stock style): green is better, red worse, grey neither. */
 const trends = computed(() => {
 	const status = data.value?.status;
 	const before = status?.hourAgo ?? null;
 	if (!status) return {};
 	const r = status.reads;
+	const t = status.timings;
 	return {
 		full: countTrend(status.counts.full, before?.full, 'bad'),
 		targeted: countTrend(status.counts.targeted, before?.targeted, 'neutral'),
@@ -391,6 +437,9 @@ const trends = computed(() => {
 		hitRate: r ? hitRateTrend(r.hits, r.misses, before) : null,
 		hits: r ? countTrend(r.hits, before?.hits, 'neutral') : null,
 		misses: r ? countTrend(r.misses, before?.misses, 'neutral') : null,
+		hitTime: t ? avgTimeTrend(t.hits, t.hitMs, before?.timings?.hits, before?.timings?.hitMs) : null,
+		missTime: t ? avgTimeTrend(t.misses, t.missMs, before?.timings?.misses, before?.timings?.missMs) : null,
+		saved: savedTrend(t, before?.timings),
 	};
 });
 
@@ -398,9 +447,14 @@ const trends = computed(() => {
 const hitRows = computed(() => {
 	const by = data.value?.status.readsByCollection;
 	if (!by) return [];
+	const times = data.value?.status.timingsByCollection ?? {};
 	return Object.entries(by)
 		.filter(([name, counts]) => name !== '*' && counts.hits + counts.misses + counts.fresh > 0)
-		.map(([name, counts]) => ({ name, ...counts, rate: counts.hits + counts.misses > 0 ? counts.hits / (counts.hits + counts.misses) : null }))
+		.map(([name, counts]) => {
+			const t = times[name];
+			const time = t ? { hit: averageMs(t.hits, t.hitMs), miss: averageMs(t.misses, t.missMs) } : null;
+			return { name, ...counts, rate: counts.hits + counts.misses > 0 ? counts.hits / (counts.hits + counts.misses) : null, time: time && (time.hit !== null || time.miss !== null) ? time : null };
+		})
 		.sort((a, b) => b.hits + b.misses + b.fresh - (a.hits + a.misses + a.fresh))
 		.slice(0, 10);
 });
@@ -421,11 +475,15 @@ const COLORS = {
 const clearLegend = [
 	{ label: 'Global Cache', color: COLORS.full },
 	{ label: 'Granular', color: COLORS.targeted },
-	{ label: 'Kept by Rule', color: COLORS.skipped },
+	{ label: 'Ignored by Rule', color: COLORS.skipped },
 ];
 const hitLegend = [
 	{ label: 'Hits', color: COLORS.targeted },
 	{ label: 'Misses', color: COLORS.miss },
+];
+const timeLegend = [
+	{ label: 'Hit', color: COLORS.targeted },
+	{ label: 'Miss', color: COLORS.miss },
 ];
 const sizeLegend = [{ label: 'Largest Size per Hour', color: COLORS.size }];
 
@@ -442,7 +500,7 @@ function hourRange(iso: string): string {
 const clearColumns = computed<BarColumn[]>(() =>
 	(data.value?.status.history ?? []).map((h) => ({
 		label: hourLabel(h.hour),
-		tooltip: `${hourRange(h.hour)}: global cache ${formatNumber(h.full)}, granular ${formatNumber(h.targeted)}, kept by rule ${formatNumber(h.skipped)}`,
+		tooltip: `${hourRange(h.hour)}: global cache ${formatNumber(h.full)}, granular ${formatNumber(h.targeted)}, ignored by rule ${formatNumber(h.skipped)}`,
 		segments: [
 			{ value: h.full, color: COLORS.full },
 			{ value: h.targeted, color: COLORS.targeted },
@@ -467,6 +525,24 @@ const hitColumns = computed<BarColumn[]>(() =>
 	}),
 );
 
+const timeColumns = computed<BarColumn[]>(() =>
+	(data.value?.status.history ?? []).map((h) => {
+		// Per hour every timed request counts (no minimum): the tooltip shows how many there were.
+		const hits = h.timedHits ?? 0;
+		const misses = h.timedMisses ?? 0;
+		const hit = hits ? (h.hitMs ?? 0) / hits : 0;
+		const miss = misses ? (h.missMs ?? 0) / misses : 0;
+		return {
+			label: hourLabel(h.hour),
+			tooltip: `${hourRange(h.hour)}: hit ${hits ? msText(hit) : '–'} (${formatNumber(hits)}), miss ${misses ? msText(miss) : '–'} (${formatNumber(misses)})`,
+			segments: [
+				{ value: hit, color: COLORS.targeted },
+				{ value: miss, color: COLORS.miss },
+			],
+		};
+	}),
+);
+
 const sizeColumns = computed<BarColumn[]>(() =>
 	(data.value?.status.history ?? []).map((h) => ({
 		label: hourLabel(h.hour),
@@ -478,60 +554,16 @@ const sizeColumns = computed<BarColumn[]>(() =>
 	})),
 );
 
-/**
- * What a change to each collection clears: the cached responses that use it, as a share of the whole cache (by size
- * in memory, by number of responses with Redis). Rows overlap, so they add up to more than the total.
- */
-const largest = computed(() => {
-	const status = data.value?.status;
-	const counts = status?.indexedByCollection ?? {};
-	const bytes = status?.bytesByCollection ?? {};
-	const bySize = Object.keys(bytes).length > 0 && !!status?.size?.bytes;
-	const total = status && status.indexed > 0 ? status.indexed : 0;
-	const totalOf = bySize ? status!.size!.bytes : total;
-	const rows = Object.keys(bySize ? bytes : counts)
-		.filter((name) => name !== '*')
-		.map((name) => ({ name, count: counts[name] ?? 0, total, bytes: bySize ? (bytes[name] ?? 0) : null }))
-		.sort((a, b) => (bySize ? b.bytes! - a.bytes! : b.count - a.count))
-		.slice(0, 8);
-	const kept = new Set([...(data.value?.ignoreList ?? []), ...(data.value ? neverClearCollections(data.value.config) : [])]);
-	// Without a total (Redis), there is no share; the bars then compare the rows with the largest one.
-	const top = Math.max(1, ...rows.map((row) => (bySize ? row.bytes! : row.count)));
-	return rows.map((row) => {
-		const value = bySize ? row.bytes! : row.count;
-		const share = totalOf > 0 ? Math.min(1, value / totalOf) : null;
-		return { ...row, kept: kept.has(row.name), share, bar: share ?? value / top, rate: changesPerHour(row.name) };
-	});
-});
-
-/** From this many changes per hour, a long bar means the cache is cleared often: the rate is highlighted. */
-const BUSY_PER_HOUR = 3;
-
-/** A rate needs at least an hour of data; before that, a few changes would look like a high rate. */
-const RATE_AFTER_MINUTES = 60;
-
-function minutesSinceStart(): number {
-	const since = data.value?.status.since;
-	return since ? (Date.now() - new Date(since).getTime()) / 60_000 : 0;
-}
-
-const changesLabel = computed(() => (minutesSinceStart() >= RATE_AFTER_MINUTES ? 'Changes per hour' : 'Changes'));
-
-/** Changes per hour since Directus started, or the plain count during the first hour. */
-function changesPerHour(collection: string): { perHour: boolean; value: number } {
-	const count = data.value?.status.liveWrites?.[collection] ?? 0;
-	const minutes = minutesSinceStart();
-	if (minutes < RATE_AFTER_MINUTES) return { perHour: false, value: count };
-	return { perHour: true, value: count / (minutes / 60) };
-}
-
-/** Responses tagged "*" (dependencies unknown): every change clears them. */
-const untraced = computed(() => {
-	const status = data.value?.status;
-	const count = status?.indexedByCollection?.['*'] ?? 0;
-	if (!(count > 0)) return null;
-	const bytes = status?.bytesByCollection?.['*'];
-	return { count, bytes: bytes === undefined ? null : bytes };
+/** Collections whose changes removed the most cached responses (granular and whole-cache clears together). */
+const clearedRows = computed(() => {
+	const by = data.value?.status.clearedBy ?? {};
+	const rows = Object.entries(by)
+		.map(([name, entry]) => ({ name, ...entry, removedTotal: entry.removed + entry.fullRemoved }))
+		.filter((row) => row.removedTotal > 0 || row.full > 0)
+		.sort((a, b) => b.removedTotal - a.removedTotal || b.full - a.full || b.changes - a.changes)
+		.slice(0, 10);
+	const top = Math.max(1, ...rows.map((row) => row.removedTotal));
+	return rows.map((row) => ({ ...row, bar: row.removedTotal / top }));
 });
 
 function times(count: number): string {
@@ -542,7 +574,7 @@ const events = computed(() => groupEvents(data.value?.status.recent ?? []));
 
 function resultText(event: GroupedEvent): string {
 	if (event.kind === 'full') return 'Global cache cleared';
-	if (event.kind === 'skipped') return 'Kept by rule';
+	if (event.kind === 'skipped') return 'Ignored by rule';
 	return `${formatNumber(event.removed)} ${event.removed === 1 ? 'cached response' : 'cached responses'} cleared`;
 }
 
@@ -764,7 +796,7 @@ th {
 	gap: 12px;
 	padding: 4px 0;
 }
-/* Narrow: name and share on the first line, bar and numbers on the second. */
+/* Narrow: name and the last number on the first line, bar and counts on the second. */
 @container largest (max-width: 560px) {
 	.largest-row {
 		grid-template-columns: minmax(0, 1fr) auto auto;
@@ -775,10 +807,6 @@ th {
 		grid-column: 1;
 		white-space: normal;
 		overflow-wrap: anywhere;
-	}
-	.largest-rate {
-		grid-row: 1;
-		grid-column: 2;
 	}
 	.largest-share {
 		grid-row: 1;
@@ -791,10 +819,6 @@ th {
 	.largest-count {
 		grid-row: 2;
 		grid-column: 2;
-	}
-	.largest-value {
-		grid-row: 2;
-		grid-column: 3;
 	}
 }
 .largest-name {
@@ -812,24 +836,12 @@ th {
 	border-radius: 0 4px 4px 0;
 	background: var(--theme--primary, var(--primary));
 }
-.largest-rate {
-	cursor: pointer;
-	white-space: nowrap;
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-	color: var(--theme--foreground-subdued, var(--foreground-subdued));
-}
-.largest-rate--busy {
-	color: var(--theme--warning, var(--warning));
-	font-weight: 600;
-}
 .largest-count {
 	white-space: nowrap;
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 	color: var(--theme--foreground-subdued, var(--foreground-subdued));
 }
-.largest-value,
 .largest-share {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
@@ -841,12 +853,8 @@ th {
 .largest-note {
 	margin: 12px 0 0;
 }
-.largest-share--kept {
-	cursor: pointer;
-	color: var(--theme--success, var(--success));
-}
 .hits-row {
-	grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) 5.5rem 6rem 5rem 3rem;
+	grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) 5.5rem 6rem 5rem 8rem 3rem;
 }
 @container largest (max-width: 560px) {
 	.hits-row {
@@ -864,16 +872,48 @@ th {
 		grid-row: 1;
 		grid-column: 2;
 	}
+	.hits-row > .largest-time {
+		grid-row: 3;
+		grid-column: 1 / -1;
+		text-align: left;
+	}
+}
+.cleared-row {
+	grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 7rem 9rem 8rem;
+}
+@container largest (max-width: 560px) {
+	.cleared-row {
+		grid-template-columns: minmax(0, 1fr) auto auto;
+	}
+	.cleared-row > :nth-child(3) {
+		grid-row: 1;
+		grid-column: 2;
+	}
+	.cleared-row > :nth-child(4) {
+		grid-row: 2;
+		grid-column: 2;
+	}
+	.cleared-row > :nth-child(5) {
+		grid-row: 2;
+		grid-column: 3;
+	}
+}
+.largest-bar--full span {
+	background: var(--theme--warning, var(--warning));
+}
+.cleared-full {
+	cursor: pointer;
+	color: var(--theme--warning, var(--warning));
+}
+.cleared-ignored {
+	cursor: pointer;
+	color: var(--blue, #3399ff);
 }
 .largest-bar--hits span {
 	background: var(--theme--success, var(--success));
 }
 .largest-count--info {
 	cursor: pointer;
-}
-.largest-bar--kept span {
-	background: var(--theme--foreground-subdued, var(--foreground-subdued));
-	opacity: 0.5;
 }
 .count {
 	cursor: pointer;

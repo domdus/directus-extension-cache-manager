@@ -24,16 +24,22 @@ export type RulesStatus = {
 	bytesByCollection: Record<string, number>;
 	/** Items written per collection since Directus started (this server). */
 	liveWrites?: Record<string, number>;
-	history: Array<{ hour: string; full: number; targeted: number; skipped: number; entries: number | null; bytes: number | null; hits?: number; misses?: number }>;
+	history: Array<{ hour: string; full: number; targeted: number; skipped: number; entries: number | null; bytes: number | null; hits?: number; misses?: number; hitMs?: number; missMs?: number; timedHits?: number; timedMisses?: number }>;
+	/** What changes to each collection cleared since Directus started. Optional: older API versions lack it. */
+	clearedBy?: Record<string, { changes: number; removed: number; full: number; fullRemoved: number; ignored: number }>;
 	/** Cache reads since Directus started (this server). Optional: older API versions lack them. */
 	reads?: ReadCounts;
 	/** Per collection; null when it can't be told (Redis, or not in Granular mode). */
 	readsByCollection?: Record<string, ReadCounts> | null;
 	/** The counters about 1 hour ago; null during the first hour. */
 	hourAgo?: TrendSnapshot | null;
+	/** Optional: an API from before response times lacks them. */
+	timings?: Timings;
+	timingsByCollection?: Record<string, Timings> | null;
 };
 
 export type ReadCounts = { hits: number; misses: number; fresh: number };
+export type Timings = { hits: number; hitMs: number; misses: number; missMs: number };
 
 export type RulesState = {
 	config: RulesConfig;

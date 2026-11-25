@@ -5,7 +5,7 @@ import { parseRules, ruleClears, ttlFor, validateRules, DEFAULT_RULE, type Rules
 import { TagIndex } from '../shared/tag-index';
 import { measureStore, measureStoreChunked, memoryStoreOf, storedSizeOf, sweepKeys } from './store-size';
 import { ExpiryQueue } from '../shared/expiry-queue';
-import { applyRules, asksForFresh, currentBucket, hourAgo, takeSnapshot, describeRequest, foldItemTags, keysOf, measure, tick, patchCache, patchItemsService, requestMiddleware, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
+import { applyRules, asksForFresh, writeAction, fromDataStudio, dataStudioMiddleware, currentBucket, hourAgo, takeSnapshot, describeRequest, foldItemTags, keysOf, measure, tick, patchCache, patchItemsService, requestMiddleware, resetRuntimeForTests, runtime, runtimeStatus } from './targeted';
 import { parse } from 'graphql';
 
 /* ---------- schema used by the dependency tests ---------- */
@@ -233,6 +233,7 @@ async function setup(config: RulesConfig) {
 	assert.deepEqual(patchItemsService(Items, rt), []);
 	patchCache(cache as any, rt);
 	rt.middlewareRegistered = true;
+	rt.middlewareVersion = 2;
 	await applyRules(config, 'save');
 	return rt;
 }
@@ -780,7 +781,7 @@ test('items: GraphQL _by_id depends on its item; lifetimes of the collection sti
 test('skip reason: "Only … changed" only when Skip Fields kept the change', async () => {
 	const { skipReason } = await import('./targeted');
 	const touch = { collection: 'pages', action: 'update' as const, fields: ['title', 'body'], keys: [] };
-	assert.equal(skipReason(touch as any, { ...DEFAULT_RULE, update: false }), "Changed in pages (rule: don't clear on update)");
+	assert.equal(skipReason(touch as any, { ...DEFAULT_RULE, update: false }), 'Changed in pages (ignored by rule)');
 	assert.equal(skipReason({ ...touch, fields: ['views_count'] } as any, { ...DEFAULT_RULE, skipFields: ['views_count'] }), 'Only views_count changed in pages');
 });
 
@@ -837,6 +838,42 @@ test('fresh: the middleware counts no-store requests under their collection', as
 	assert.equal(runtimeStatus().readsByCollection!.visits!.fresh, 1);
 });
 
+test('timing: the before middleware times hits and misses per collection, not fresh requests', async () => {
+	const { EventEmitter } = await import('node:events');
+	const rt = await setup({ targeted: true, collections: {} });
+	const request = (key: string, tags: string[] | null, url = '/items/pages') =>
+		new Promise<void>((resolve) => {
+			const res = new EventEmitter();
+			dataStudioMiddleware(rt)({ method: 'GET', originalUrl: url, get: () => undefined }, res, async () => {
+				if ((await (cache as any).get(key)) === undefined && tags) await cacheAnswer(key, tags);
+				res.emit('finish');
+				resolve();
+			});
+		});
+	await request('pages-list', ['pages']);
+	await request('pages-list', null);
+	await request('pages-list', null);
+	await request('nothing', null);
+	const status = runtimeStatus();
+	assert.equal(status.timings.misses, 1);
+	assert.equal(status.timings.hits, 2, 'a request that neither hit nor was stored is not timed');
+	assert.ok(status.timings.hitMs >= 0 && status.timings.missMs >= 0);
+	assert.equal(status.timingsByCollection!.pages!.hits, 2);
+	const bucket = status.history[status.history.length - 1]!;
+	assert.equal(bucket.timedHits, 2);
+	assert.equal(bucket.timedMisses, 1);
+});
+
+test('timing: recordTiming adds the duration of the first outcome', async () => {
+	const { recordTiming } = await import('./targeted');
+	const rt = await setup({ targeted: true, collections: {} });
+	recordTiming(rt as any, { start: 100, outcome: 'miss', collections: new Set(['pages']) }, 180);
+	recordTiming(rt as any, { start: 100, outcome: 'hit', collections: new Set(['pages']) }, 104);
+	recordTiming(rt as any, { start: 100, outcome: null, collections: null }, 500);
+	assert.deepEqual(runtimeStatus().timings, { hits: 1, hitMs: 4, misses: 1, missMs: 80 });
+	assert.deepEqual(runtimeStatus().timingsByCollection!.pages, { hits: 1, hitMs: 4, misses: 1, missMs: 80 });
+});
+
 test('trend: the newest snapshot at least 1 hour old', () => {
 	const rt = runtime();
 	const start = Date.parse('2026-11-24T10:00:00Z');
@@ -849,4 +886,98 @@ test('trend: the newest snapshot at least 1 hour old', () => {
 	assert.equal(hourAgo(rt, now)!.hits, 30);
 	assert.ok(rt.snapshots.length <= 72, 'keeps only a little more than an hour');
 	assert.equal(hourAgo(rt, start + 30 * 60_000 + 59 * 60_000)!.hits, 29);
+});
+
+test('upsert: saving only existing items counts as a change, so Kept Fields apply', async () => {
+	assert.equal(writeAction('upsertMany', [[{ id: 1, item: 'a' }, { id: 2 }]], 'id'), 'update');
+	assert.equal(writeAction('upsertMany', [[{ id: 1 }, { item: 'new' }]], 'id'), 'upsert');
+	assert.equal(writeAction('upsertMany', [[]], 'id'), 'upsert');
+	assert.equal(writeAction('createOne', [{ id: 1 }], 'id'), 'create');
+
+	await setup({ targeted: true, collections: { pages: { ...DEFAULT_RULE, skipFields: ['views_count'] } } });
+	await cacheAnswer('pages', ['pages']);
+	await new Items('pages').upsertMany([{ id: 1, views_count: 3 }]);
+	assert.ok(cache.store.has('pages'), 'an upsert of an existing item that only changes a kept field keeps the cache');
+	assert.equal(runtimeStatus().recent[0]!.kind, 'skipped');
+	await new Items('pages').upsertMany([{ views_count: 0 }]);
+	assert.ok(!cache.store.has('pages'), 'a new item clears');
+});
+
+test('reload: wrappers of an older version are replaced; the middleware calls the newest code', async () => {
+	await setup({ targeted: true, collections: {} });
+	const rt = runtime();
+	// A wrapper from before 1.2.0: no version, calls its own code.
+	const real = (Items.prototype as any).updateMany.__original;
+	let oldCalls = 0;
+	const old = function (this: any, ...args: unknown[]) {
+		oldCalls++;
+		return real.apply(this, args);
+	};
+	(old as any).__cacheManager = true;
+	(old as any).__original = real;
+	(Items.prototype as any).updateMany = old;
+	patchItemsService(Items, rt);
+	assert.equal((Items.prototype as any).updateMany.__original, real, 'wrapped around the Directus method, not the old wrapper');
+	let newCalls = 0;
+	rt.handlers!.write = (service, method, original, args) => {
+		newCalls++;
+		return original.apply(service, args);
+	};
+	await new Items('pages').updateMany([1], { title: 'x' });
+	assert.equal(oldCalls, 0);
+	assert.equal(newCalls, 1);
+
+	let served = '';
+	const middleware = requestMiddleware(rt);
+	rt.handlers!.middleware = (_req, _res, next) => {
+		served = 'new';
+		next();
+	};
+	await new Promise<void>((resolve) => middleware({ method: 'GET', originalUrl: '/items/pages' }, { locals: {} }, () => resolve()));
+	assert.equal(served, 'new');
+	assert.equal(rt.middlewareVersion, 2);
+});
+
+test('reload: Granular mode stays without clearing the cache; startup clears once', async () => {
+	const rt = await setup({ targeted: true, collections: {} });
+	const before = cache.clears;
+	await applyRules({ targeted: true, items: false, collections: {} }, 'reload');
+	assert.equal(cache.clears, before, 'the index survived the reload');
+	await applyRules({ targeted: true, items: false, collections: {} }, 'startup');
+	assert.equal(cache.clears, before + 1);
+	assert.equal(rt.recent[0]!.reason, 'Directus started in Granular mode');
+});
+
+test('data studio: skips the cache for collections with a rule, like Directus for the ignore list', async () => {
+	const env2 = { PUBLIC_URL: 'https://cms.example.com' };
+	const req = (referer: string) => ({ get: (name: string) => (name === 'referer' ? referer : undefined) });
+	assert.equal(fromDataStudio(req('https://cms.example.com/admin/content/pages'), env2), true);
+	assert.equal(fromDataStudio(req('https://shop.example.com/'), env2), false);
+	assert.equal(fromDataStudio(req('https://cms.example.com/admin/x'), { PUBLIC_URL: '/' }), true);
+	assert.equal(fromDataStudio({ get: () => undefined }, env2), false);
+
+	const rt = await setup({ targeted: true, collections: { subscriptions: { ...DEFAULT_RULE, create: false, update: false, delete: false } } });
+	rt.env = { ...env, PUBLIC_URL: 'https://cms.example.com' };
+	await cacheAnswer('subs', ['subscriptions']);
+	await cacheAnswer('pages', ['pages']);
+	const studio = (url: string, key: string) =>
+		new Promise<unknown>((resolve) =>
+			dataStudioMiddleware(rt)({ method: 'GET', originalUrl: url, ...req('https://cms.example.com/admin/content') }, {}, () => {
+				(cache as any).get(key).then(resolve);
+			}),
+		);
+	assert.equal(await studio('/items/subscriptions?limit=25', 'subs'), undefined, 'editors get the current data');
+	assert.equal(await studio('/items/pages', 'pages'), 'value', 'collections without a rule still use the cache');
+	assert.equal(await (cache as any).get('subs'), 'value', 'apps still use the cache');
+});
+
+test('cleared by: what changes to each collection removed, ignored or cleared whole', async () => {
+	await setup({ targeted: true, collections: { pages: { ...DEFAULT_RULE, skipFields: ['views_count'] } } });
+	await cacheAnswer('a', ['visits']);
+	await cacheAnswer('b', ['visits', 'pages']);
+	await new Items('visits').createOne({ page: 1 });
+	await new Items('pages').updateMany([1], { views_count: 2 });
+	const by = runtimeStatus().clearedBy;
+	assert.deepEqual(by.visits, { changes: 1, removed: 2, full: 0, fullRemoved: 0, ignored: 0 });
+	assert.deepEqual(by.pages, { changes: 1, removed: 0, full: 0, fullRemoved: 0, ignored: 1 });
 });

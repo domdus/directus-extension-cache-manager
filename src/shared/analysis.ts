@@ -1,4 +1,4 @@
-import type { SkipSuggestion } from './skip-fields';
+import type { SkipSuggestion, RuleShare } from './skip-fields';
 import type { LiveGap } from './coverage';
 import { EDITOR_SHARE_MAX, RECOMMEND_MIN_SHARE, RECOMMENDABLE_SYSTEM_COLLECTIONS } from './constants';
 
@@ -56,6 +56,8 @@ export type Analysis = {
 	/** Collections that changed more often than the activity log shows, since liveSince (filled in by the endpoint). */
 	liveGaps?: LiveGap[];
 	liveSince?: string;
+	/** Per collection with a rule: how much of its changes the rule ignores (filled in by the endpoint). */
+	ruleShares?: Record<string, RuleShare>;
 };
 
 export type MinuteSets = Map<string, Set<number>>;

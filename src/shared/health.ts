@@ -13,6 +13,11 @@ function perHour(rate: string): string {
 	return `${rate} times per hour`;
 }
 
+/** "about 16 times per hour", but "less than once per hour" without "about". */
+function aboutPerHour(rate: string): string {
+	return rate === '<1' ? perHour(rate) : `about ${perHour(rate)}`;
+}
+
 export function ttlVsPurgeText(
 	ttl: string | null | undefined,
 	purgeMinutes: number,
@@ -24,7 +29,7 @@ export function ttlVsPurgeText(
 		const wideInterval = (windowMinutes / options.wideMinutes) * 60_000;
 		if (wideInterval < ttlMs / 2) {
 			const wideRate = formatTimesPerHour(options.wideMinutes, windowMinutes);
-			return `Changes to users, roles, permissions, settings or the data model still clear the whole cache, about ${perHour(wideRate)}, so cached responses rarely last the full ${formatDurationLabel(ttl)}.`;
+			return `Changes to users, roles, permissions, settings or the data model still clear the whole cache, ${aboutPerHour(wideRate)}, so cached responses rarely last the full ${formatDurationLabel(ttl)}.`;
 		}
 	}
 	if (!ttlMs || ttlMs <= 0 || !(windowMinutes > 0) || !(purgeMinutes > 0)) return null;
@@ -33,9 +38,9 @@ export function ttlVsPurgeText(
 	const rate = formatTimesPerHour(purgeMinutes, windowMinutes);
 	const lifetime = formatDurationLabel(ttl);
 	if (options?.granular) {
-		return `Cached responses can last the full ${lifetime}. Without Granular mode, changes clear the whole cache about ${perHour(rate)}.`;
+		return `Cached responses can last the full ${lifetime}. Without Granular mode, changes clear the whole cache ${aboutPerHour(rate)}.`;
 	}
-	return `Cache Lifetime is ${lifetime}, but changes clear the whole cache about ${perHour(rate)}. Most responses are gone long before that.`;
+	return `Cache Lifetime is ${lifetime}, but changes clear the whole cache ${aboutPerHour(rate)}. Most responses are gone long before that.`;
 }
 
 /** Average minutes between whole-cache clears since this process started; null without enough data. */
@@ -85,5 +90,5 @@ export function sizeVsClearsText(bytes: number, fullClears: number, sinceIso: st
 	if (minutes === null || minutes > CONSTANT_CLEAR_MINUTES) return null;
 	// Times per hour, like Analysis (minutes with a whole-cache clear).
 	const rate = formatTimesPerHour(60, minutes * 60);
-	return `Changes clear the whole cache about ${perHour(rate)}, so it can't grow: ${formatBytes(bytes)} now.`;
+	return `Changes clear the whole cache ${aboutPerHour(rate)}, so it can't grow: ${formatBytes(bytes)} now.`;
 }

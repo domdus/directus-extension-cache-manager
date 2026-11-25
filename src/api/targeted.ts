@@ -32,6 +32,9 @@ type KeyvLike = {
 	delete: (key: string | string[]) => Promise<unknown>;
 };
 
+/** A request from the Data Studio. `skipped`: its cached response was not used (it reads a collection with a rule). */
+type StudioRequest = { path: string; skipped: boolean };
+
 /** `keys`: the items a write changes; [] for new items only; null when unknown (then all of the collection's items). */
 type Touch = { collection: string; action: WriteAction; fields: string[]; keys: string[] | null };
 type WriteContext = Touch & { parent: WriteContext | null; touched: Touch[]; done: boolean };
@@ -68,7 +71,18 @@ export type HistoryBucket = {
 	/** Requests answered from the cache, and responses that had to be built and were stored (misses). */
 	hits: number;
 	misses: number;
+	/** Response times of the timed hits and misses this hour (see Timings). Optional: buckets from an older version lack them. */
+	hitMs?: number;
+	missMs?: number;
+	timedHits?: number;
+	timedMisses?: number;
 };
+
+/**
+ * Response times since this process started, measured from before Directus' cache check until the response is sent
+ * (time inside Directus, not the network). Only requests that hit or were stored as a miss.
+ */
+export type Timings = { hits: number; hitMs: number; misses: number; missMs: number };
 
 /** Cache reads since this process started. */
 export type ReadCounts = {
@@ -80,6 +94,13 @@ export type ReadCounts = {
 	fresh: number;
 };
 
+/**
+ * What changes to one collection cleared. `removed`: cached responses deleted by its granular clears; `full`: how
+ * often it cleared the whole cache, `fullRemoved`: the cached responses that held (memory store only); `ignored`:
+ * changes a rule ignored.
+ */
+export type ClearedBy = { changes: number; removed: number; full: number; fullRemoved: number; ignored: number };
+
 /** The counters 1 hour ago, for the trend arrows. */
 export type Snapshot = {
 	at: string;
@@ -89,6 +110,8 @@ export type Snapshot = {
 	fullMinutes: number;
 	hits: number;
 	misses: number;
+	/** Optional: snapshots from an older version lack them. */
+	timings?: Timings;
 };
 
 export type RuntimeStatus = {
@@ -117,10 +140,15 @@ export type RuntimeStatus = {
 	/** Items written per collection since this process started, counted live (with or without activity tracking). */
 	liveWrites: Record<string, number>;
 	reads: ReadCounts;
+	/** What changes to each collection cleared since this process started. */
+	clearedBy: Record<string, ClearedBy>;
 	/** Per collection; null when it can't be told (Redis, or not in Granular mode): only the totals count then. */
 	readsByCollection: Record<string, ReadCounts> | null;
 	/** The counters about 1 hour ago; null during the first hour. */
 	hourAgo: Snapshot | null;
+	timings: Timings;
+	/** Per collection; null like readsByCollection. */
+	timingsByCollection: Record<string, Timings> | null;
 };
 
 type Runtime = {
@@ -131,11 +159,17 @@ type Runtime = {
 	patchedMethods: boolean;
 	/** The request middleware is only added at Directus start (init 'middlewares.after'), not on an extension reload. */
 	middlewareRegistered: boolean;
+	/** WRAPPER_VERSION of the registered middleware; 0 for one from before 1.2.0, which can't load newer code. */
+	middlewareVersion: number;
 	index: TagIndex;
 	writeContext: AsyncLocalStorage<WriteContext>;
 	requestContext: AsyncLocalStorage<RequestContext>;
 	/** Set inside a request that asked for fresh data: Directus still stores its response, but that's no miss. */
 	freshContext: AsyncLocalStorage<true>;
+	/** Set before Directus' cache check for requests from the Data Studio (see dataStudioMiddleware). */
+	studioContext: AsyncLocalStorage<StudioRequest>;
+	/** Set before Directus' cache check for GET and GraphQL requests: hit or miss, and how long the response took. */
+	timingContext: AsyncLocalStorage<TimedRequest>;
 	permissionDeps: Promise<Map<string, Set<string>>> | null;
 	problems: string[];
 	since: string;
@@ -147,6 +181,9 @@ type Runtime = {
 	liveWrites: Map<string, number>;
 	reads: ReadCounts;
 	readsByCollection: Map<string, ReadCounts>;
+	timings: Timings;
+	timingsByCollection: Map<string, Timings>;
+	clearedBy: Map<string, ClearedBy>;
 	/** One snapshot per minute, the last hour and a bit (for the trend arrows). */
 	snapshots: Snapshot[];
 	/**
@@ -189,6 +226,10 @@ type Runtime = {
 		tick: () => Promise<void>;
 		/** Optional: handlers of an older version (extension reload) lack it until the next install. */
 		read?: (service: any, query: unknown) => Promise<void>;
+		readOne?: (service: any, key: unknown) => void;
+		write?: (service: any, method: string, original: (...args: unknown[]) => unknown, args: unknown[]) => unknown;
+		middleware?: (req: any, res: any, next: (error?: unknown) => void) => unknown;
+		studio?: (req: any, res: any, next: (error?: unknown) => void) => unknown;
 	} | null;
 	env: Record<string, unknown>;
 	database: any;
@@ -239,10 +280,13 @@ function freshRuntime(): Runtime {
 		originalGet: null,
 		patchedMethods: false,
 		middlewareRegistered: false,
+		middlewareVersion: 0,
 		index: new TagIndex(),
 		writeContext: new AsyncLocalStorage<WriteContext>(),
 		requestContext: new AsyncLocalStorage<RequestContext>(),
 		freshContext: new AsyncLocalStorage<true>(),
+		studioContext: new AsyncLocalStorage<StudioRequest>(),
+		timingContext: new AsyncLocalStorage<TimedRequest>(),
 		permissionDeps: null,
 		problems: [],
 		since: new Date().toISOString(),
@@ -254,6 +298,9 @@ function freshRuntime(): Runtime {
 		liveWrites: new Map(),
 		reads: { hits: 0, misses: 0, fresh: 0 },
 		readsByCollection: new Map(),
+		timings: emptyTimings(),
+		timingsByCollection: new Map(),
+		clearedBy: new Map(),
 		snapshots: [],
 		expiry: new ExpiryQueue(),
 		shared: null,
@@ -292,7 +339,21 @@ export function currentBucket(rt: Runtime, now = Date.now()): HistoryBucket {
 	return bucket;
 }
 
-function record(rt: Runtime, event: Omit<ClearEvent, 'at'>) {
+function record(rt: Runtime, event: Omit<ClearEvent, 'at'>, fullRemoved = 0) {
+	try {
+		if (event.collection) {
+			let by = rt.clearedBy.get(event.collection);
+			if (!by) rt.clearedBy.set(event.collection, (by = { changes: 0, removed: 0, full: 0, fullRemoved: 0, ignored: 0 }));
+			by.changes++;
+			if (event.kind === 'skipped') by.ignored++;
+			else if (event.kind === 'full') {
+				by.full++;
+				by.fullRemoved += fullRemoved;
+			} else by.removed += event.removed;
+		}
+	} catch {
+		// Statistics must never break a clear.
+	}
 	try {
 		currentBucket(rt)[event.kind]++;
 	} catch {
@@ -350,45 +411,72 @@ export function keysOf(method: string, args: unknown[], primaryKey: string | und
 	return null;
 }
 
-/** Wraps the ItemsService write methods once per process. */
+/**
+ * Version of the wrappers below. Wrappers call through rt.handlers, so a reloaded extension uses its newest code; a
+ * wrapper from an older version (without that) is replaced by one of this version, around the same Directus method.
+ */
+const WRAPPER_VERSION = 2;
+
+/** The Directus method behind a wrapper, or null when this version's wrapper is already in place. */
+function unwrapped(fn: any): any {
+	if (!fn?.__cacheManager) return fn;
+	return fn.__cacheManagerVersion === WRAPPER_VERSION ? null : (fn.__original ?? null);
+}
+
+function markWrapper(wrapper: any, original: unknown) {
+	wrapper.__cacheManager = true;
+	wrapper.__cacheManagerVersion = WRAPPER_VERSION;
+	wrapper.__original = original;
+}
+
+/** What a wrapped write method does. Exported for tests. */
+export function handleWrite(rt: Runtime, service: any, method: string, original: (...args: unknown[]) => unknown, args: unknown[]) {
+	const primaryKey = service?.schema?.collections?.[service.collection]?.primary;
+	const parent = rt.writeContext.getStore() ?? null;
+	const ctx: WriteContext = {
+		collection: service.collection,
+		action: writeAction(method, args, primaryKey),
+		fields: fieldsOf(method, args, primaryKey),
+		keys: keysOf(method, args, primaryKey),
+		parent: parent && !parent.done ? parent : null,
+		touched: [],
+		done: false,
+	};
+	// Tell every open parent write about this nested write: the parent's clear has to cover it.
+	for (let up = ctx.parent; up; up = up.parent) up.touched.push({ collection: ctx.collection, action: ctx.action, fields: ctx.fields, keys: ctx.keys });
+	return rt.writeContext.run(ctx, async () => {
+		try {
+			const result = await original.apply(service, args);
+			const items = writtenItems(method, ctx.keys);
+			if (items) rt.liveWrites.set(ctx.collection, (rt.liveWrites.get(ctx.collection) ?? 0) + items);
+			return result;
+		} finally {
+			ctx.done = true;
+		}
+	});
+}
+
+/** What a wrapped readOne does: inside a GraphQL request, its read depends on its item only. */
+function noteSingleRead(rt: Runtime, service: any, key: unknown) {
+	if (rt.requestContext.getStore()?.graphql && rt.config.items && rt.config.targeted && service) rt.singleReads.set(service, [String(key)]);
+}
+
+/** Wraps the ItemsService write methods once per process (again when an older version wrapped them). */
 export function patchItemsService(ItemsService: any, rt = runtime()): string[] {
 	const missing: string[] = [];
 	const proto = ItemsService?.prototype;
 	if (!proto) return ['ItemsService not found'];
-	for (const [method, action] of Object.entries(WRITE_METHODS)) {
-		const original = proto[method];
-		if (typeof original !== 'function') {
+	for (const method of Object.keys(WRITE_METHODS)) {
+		if (typeof proto[method] !== 'function') {
 			missing.push(`ItemsService.${method} not found`);
 			continue;
 		}
-		if (original.__cacheManager) continue;
+		const original = unwrapped(proto[method]);
+		if (!original) continue;
 		const wrapped = function (this: any, ...args: unknown[]) {
-			const primaryKey = this?.schema?.collections?.[this.collection]?.primary;
-			const parent = rt.writeContext.getStore() ?? null;
-			const ctx: WriteContext = {
-				collection: this.collection,
-				action,
-				fields: fieldsOf(method, args, primaryKey),
-				keys: keysOf(method, args, primaryKey),
-				parent: parent && !parent.done ? parent : null,
-				touched: [],
-				done: false,
-			};
-			// Tell every open parent write about this nested write: the parent's clear has to cover it.
-			for (let up = ctx.parent; up; up = up.parent) up.touched.push({ collection: ctx.collection, action: ctx.action, fields: ctx.fields, keys: ctx.keys });
-			return rt.writeContext.run(ctx, async () => {
-				try {
-					const result = await original.apply(this, args);
-					const items = writtenItems(method, ctx.keys);
-					if (items) rt.liveWrites.set(ctx.collection, (rt.liveWrites.get(ctx.collection) ?? 0) + items);
-					return result;
-				} finally {
-					ctx.done = true;
-				}
-			});
+			return rt.handlers?.write ? rt.handlers.write(this, method, original, args) : handleWrite(rt, this, method, original, args);
 		};
-		(wrapped as any).__cacheManager = true;
-		(wrapped as any).__original = original;
+		markWrapper(wrapped, original);
 		proto[method] = wrapped;
 	}
 	rt.patchedMethods = missing.length === 0;
@@ -402,18 +490,17 @@ export function patchItemsService(ItemsService: any, rt = runtime()): string[] {
  * count as "uses everything", as before, so a missing method is not a problem.
  */
 function patchReads(proto: any, rt: Runtime) {
-	const readOne = proto.readOne;
-	if (typeof readOne === 'function' && !readOne.__cacheManager) {
+	const readOne = typeof proto.readOne === 'function' ? unwrapped(proto.readOne) : null;
+	if (readOne) {
 		const wrappedOne = function (this: any, key: unknown, ...rest: unknown[]) {
-			if (rt.requestContext.getStore()?.graphql && rt.config.items && rt.config.targeted && this) rt.singleReads.set(this, [String(key)]);
+			(rt.handlers?.readOne ?? ((service: any, k: unknown) => noteSingleRead(rt, service, k)))(this, key);
 			return readOne.call(this, key, ...rest);
 		};
-		(wrappedOne as any).__cacheManager = true;
-		(wrappedOne as any).__original = readOne;
+		markWrapper(wrappedOne, readOne);
 		proto.readOne = wrappedOne;
 	}
-	const original = proto.readByQuery;
-	if (typeof original !== 'function' || original.__cacheManager) return;
+	const original = typeof proto.readByQuery === 'function' ? unwrapped(proto.readByQuery) : null;
+	if (!original) return;
 	const wrapped = async function (this: any, ...args: unknown[]) {
 		const request = rt.requestContext.getStore();
 		if (request?.graphql && rt.handlers?.read) {
@@ -426,8 +513,7 @@ function patchReads(proto: any, rt: Runtime) {
 		}
 		return original.apply(this, args);
 	};
-	(wrapped as any).__cacheManager = true;
-	(wrapped as any).__original = original;
+	markWrapper(wrapped, original);
 	proto.readByQuery = wrapped;
 }
 
@@ -525,13 +611,22 @@ function collectionsOfTags(tags: Iterable<string>): Set<string> {
  * as GraphQL mutations) don't count. Exported for tests.
  */
 export async function handleGet(rt: Runtime, cache: KeyvLike, key: string) {
+	const studio = rt.studioContext.getStore();
+	if (studio && typeof key === 'string' && !key.endsWith('__expires_at') && studioSkips(rt, studio.path)) {
+		// Like Directus does for CACHE_AUTO_PURGE_IGNORE_LIST: editors see the current data of a collection whose
+		// changes a rule ignores. The fresh response replaces the cached one.
+		studio.skipped = true;
+		return undefined;
+	}
 	const value = await rt.originalGet!.call(cache, key);
 	try {
 		if (value && typeof key === 'string' && !key.endsWith('__expires_at')) {
 			rt.reads.hits++;
 			currentBucket(rt).hits++;
 			const tags = rt.shared ? null : rt.index.tagsOf(key);
-			if (tags) for (const collection of collectionsOfTags(tags)) readsOf(rt, collection).hits++;
+			const collections = tags ? collectionsOfTags(tags) : null;
+			if (collections) for (const collection of collections) readsOf(rt, collection).hits++;
+			markTimed(rt, 'hit', collections);
 		}
 	} catch {
 		// Statistics must never break a request.
@@ -544,7 +639,117 @@ function countMiss(rt: Runtime, deps: Set<string> | undefined) {
 	try {
 		rt.reads.misses++;
 		currentBucket(rt).misses++;
-		if (deps) for (const collection of collectionsOfTags(deps)) readsOf(rt, collection).misses++;
+		const collections = deps ? collectionsOfTags(deps) : null;
+		if (collections) for (const collection of collections) readsOf(rt, collection).misses++;
+		markTimed(rt, 'miss', collections);
+	} catch {
+		// Statistics must never break a request.
+	}
+}
+
+/** The collection of an /items/<collection> path whose rule ignores some changes: the Data Studio skips its cache. */
+export function studioSkips(rt: Runtime, path: string): boolean {
+	const match = /^\/items\/([^/?#]+)/.exec(path);
+	if (!match) return false;
+	let collection: string;
+	try {
+		collection = decodeURIComponent(match[1]!);
+	} catch {
+		return false;
+	}
+	const rule = rt.config.collections[collection];
+	return !!rule && (!rule.create || !rule.update || !rule.delete || rule.skipFields.length > 0);
+}
+
+/** Was the request sent by the Data Studio? Same test as Directus: the Referer is the admin app of PUBLIC_URL. Exported for tests. */
+export function fromDataStudio(req: any, env: Record<string, unknown>): boolean {
+	const referer = typeof req?.get === 'function' ? req.get('referer') : req?.headers?.referer;
+	if (typeof referer !== 'string' || !referer) return false;
+	const publicUrl = String(env['PUBLIC_URL'] ?? '/');
+	try {
+		const admin = new URL('admin', publicUrl.endsWith('/') ? publicUrl : `${publicUrl}/`);
+		return referer.startsWith(admin.href);
+	} catch {
+		// A relative PUBLIC_URL ("/" or "/cms"): compare the paths.
+		const base = publicUrl.endsWith('/') ? publicUrl : `${publicUrl}/`;
+		try {
+			return new URL(referer).pathname.startsWith(`${base.startsWith('/') ? base : `/${base}`}admin`);
+		} catch {
+			return false;
+		}
+	}
+}
+
+/**
+ * Express middleware for init('middlewares.before'): runs before Directus' cache check. Times GET and GraphQL requests
+ * (Statistics: response times) and marks requests from the Data Studio, so get() can skip the cache for collections
+ * with a rule. Registered once; calls the newest version's code.
+ */
+export function dataStudioMiddleware(rt = runtime()) {
+	const own = buildStudioMiddleware(rt);
+	return (req: any, res: any, next: (error?: unknown) => void) => (rt.handlers?.studio ?? own)(req, res, next);
+}
+
+function buildStudioMiddleware(rt: Runtime) {
+	return (req: any, res: any, next: (error?: unknown) => void) => {
+		const isGraphql = String(req.originalUrl ?? '').startsWith('/graphql');
+		if (!rt.cache || (req.method !== 'GET' && !isGraphql)) return next();
+		// Times the request: get() or set() tell whether it was a hit or a miss, 'finish' how long it took.
+		const timed: TimedRequest = { start: performance.now(), outcome: null, collections: null };
+		try {
+			res.once('finish', () => recordTiming(rt, timed));
+		} catch {
+			// Statistics must never break a request.
+		}
+		const run = () => rt.timingContext.run(timed, () => next());
+		if (req.method !== 'GET' || !fromDataStudio(req, rt.env)) return run();
+		const path = String(req.originalUrl ?? req.url ?? '').split('?')[0] ?? '';
+		rt.studioContext.run({ path, skipped: false }, run);
+	};
+}
+
+type TimedRequest = { start: number; outcome: 'hit' | 'miss' | null; collections: Set<string> | null };
+
+function emptyTimings(): Timings {
+	return { hits: 0, hitMs: 0, misses: 0, missMs: 0 };
+}
+
+/** The request being timed was a hit or a miss (the first one counts: a GraphQL request can read the cache more than once). */
+function markTimed(rt: Runtime, outcome: 'hit' | 'miss', collections: Set<string> | null) {
+	const timed = rt.timingContext.getStore();
+	if (!timed || timed.outcome) return;
+	timed.outcome = outcome;
+	timed.collections = collections;
+}
+
+/** Adds the response time of a finished request that hit or missed. Exported for tests. */
+export function recordTiming(rt: Runtime, timed: TimedRequest, now = performance.now()) {
+	try {
+		if (!timed.outcome) return;
+		const ms = Math.max(0, now - timed.start);
+		const add = (timings: Timings) => {
+			if (timed.outcome === 'hit') {
+				timings.hits++;
+				timings.hitMs += ms;
+			} else {
+				timings.misses++;
+				timings.missMs += ms;
+			}
+		};
+		add(rt.timings);
+		const bucket = currentBucket(rt);
+		if (timed.outcome === 'hit') {
+			bucket.timedHits = (bucket.timedHits ?? 0) + 1;
+			bucket.hitMs = (bucket.hitMs ?? 0) + ms;
+		} else {
+			bucket.timedMisses = (bucket.timedMisses ?? 0) + 1;
+			bucket.missMs = (bucket.missMs ?? 0) + ms;
+		}
+		for (const collection of timed.collections ?? []) {
+			let timings = rt.timingsByCollection.get(collection);
+			if (!timings) rt.timingsByCollection.set(collection, (timings = emptyTimings()));
+			add(timings);
+		}
 	} catch {
 		// Statistics must never break a request.
 	}
@@ -580,6 +785,7 @@ export function takeSnapshot(rt: Runtime, now = Date.now()) {
 		fullMinutes: rt.counts.fullMinutes ?? 0,
 		hits: rt.reads.hits,
 		misses: rt.reads.misses,
+		timings: { ...rt.timings },
 	});
 	// Keep a little more than an hour: the oldest one at least 60 minutes old is the comparison.
 	const cutoff = now - 70 * 60_000;
@@ -597,6 +803,8 @@ export function hourAgo(rt: Runtime, now = Date.now()): Snapshot | null {
 }
 
 async function fullClear(rt: Runtime, cache: KeyvLike, event: Omit<ClearEvent, 'at' | 'kind' | 'removed'>) {
+	// Cached responses the clear deletes: known with the memory store (the index), not with Redis.
+	const held = rt.shared ? 0 : rt.config.targeted ? rt.index.size : Math.round((rt.lastSize?.entries ?? 0) / 2);
 	await rt.originals!.clear.call(cache);
 	rt.seq++;
 	rt.fullClearedAt = rt.anyClearedAt = rt.seq;
@@ -612,7 +820,7 @@ async function fullClear(rt: Runtime, cache: KeyvLike, event: Omit<ClearEvent, '
 			await rt.shared!.clearAll();
 		});
 	}
-	record(rt, { kind: 'full', removed: 0, ...event });
+	record(rt, { kind: 'full', removed: 0, ...event }, held);
 }
 
 async function deleteKeys(cache: KeyvLike, keys: string[]) {
@@ -708,12 +916,26 @@ function verb(action: WriteAction): string {
 }
 
 export function skipReason(ctx: Touch, rule = DEFAULT_RULE): string {
-	if (neverClears(rule)) return `${verb(ctx.action)} in ${ctx.collection} (rule: never clear)`;
-	// "Only … changed" only when Skip Fields kept it; with Update off, say so instead.
+	if (neverClears(rule)) return `${verb(ctx.action)} in ${ctx.collection} (ignored by rule)`;
+	// "Only … changed" only when Ignored Fields ignored it; with Update ignored, say so instead.
 	if (ctx.action === 'update' && rule.update && ctx.fields.length && ctx.fields.every((field) => rule.skipFields.includes(field))) {
 		return `Only ${ctx.fields.join(', ')} changed in ${ctx.collection}`;
 	}
-	return `${verb(ctx.action)} in ${ctx.collection} (rule: don't clear on ${ctx.action})`;
+	return `${verb(ctx.action)} in ${ctx.collection} (ignored by rule)`;
+}
+
+/**
+ * upsertMany with a primary key in every entry saves existing items, like a nested save of a parent's items: it counts
+ * as an update, so Ignored Fields apply. An entry without a key is a new item. Exported for tests.
+ */
+export function writeAction(method: string, args: unknown[], primaryKey: string | undefined): WriteAction {
+	const action = WRITE_METHODS[method]!;
+	if (method !== 'upsertMany' || !primaryKey || !Array.isArray(args[0]) || !args[0].length) return action;
+	const allKeyed = (args[0] as unknown[]).every((entry) => {
+		const key = entry && typeof entry === 'object' ? (entry as Record<string, unknown>)[primaryKey] : undefined;
+		return key !== undefined && key !== null && key !== '';
+	});
+	return allKeyed ? 'update' : action;
 }
 
 /** Was one of the answer's collections cleared after its request began? Then the answer may be older than the change. */
@@ -735,7 +957,7 @@ export async function handleSet(rt: Runtime, cache: KeyvLike, key: string, value
 	if (request?.ttl) ttl = request.ttl;
 	const result = await rt.originals!.set.call(cache, key, value, ttl);
 	if (typeof key !== 'string') return result;
-	if (!key.endsWith('__expires_at') && !rt.freshContext.getStore()) countMiss(rt, rt.config.targeted && !rt.shared ? request?.deps : undefined);
+	if (!key.endsWith('__expires_at') && !rt.freshContext.getStore() && !rt.studioContext.getStore()?.skipped) countMiss(rt, rt.config.targeted && !rt.shared ? request?.deps : undefined);
 	const expires = Date.now() + (ttl ?? globalTtlMs(rt.env));
 	// In every mode: the sweep deletes the entry when it expires (Keyv only does that when the key is read again).
 	if (memoryStoreOf(cache)) rt.expiry.add(storeKeyOf(cache, key), expires);
@@ -864,6 +1086,14 @@ export function foldItemTags(counts: Record<string, number>): Record<string, num
 /** Express middleware for init('middlewares.after'): runs after Directus' cache check, before the routes. */
 export function requestMiddleware(rt = runtime()) {
 	rt.middlewareRegistered = true;
+	rt.middlewareVersion = WRAPPER_VERSION;
+	const own = buildMiddleware(rt);
+	// Registered once at Directus start: calls the newest version's middleware after an extension reload.
+	return (req: any, res: any, next: (error?: unknown) => void) => (rt.handlers?.middleware ?? own)(req, res, next);
+}
+
+/** The request middleware of this version. */
+function buildMiddleware(rt: Runtime) {
 	const handle = describeAndContinue(rt);
 	return (req: any, res: any, next: (error?: unknown) => void) => {
 		const isGraphql = String(req.originalUrl ?? '').startsWith('/graphql');
@@ -916,7 +1146,7 @@ export type InstallContext = {
 };
 
 /** Applies the patches (once per process) and the given rules. */
-export async function installTargeted(ctx: InstallContext, config: RulesConfig) {
+export async function installTargeted(ctx: InstallContext, config: RulesConfig, origin: 'startup' | 'reload' = 'startup') {
 	const rt = runtime();
 	rt.env = ctx.env;
 	rt.database = ctx.database;
@@ -925,6 +1155,10 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 		clear: (cache) => handleClear(rt, cache),
 		set: (cache, key, value, ttl) => handleSet(rt, cache, key, value, ttl),
 		get: (cache, key) => handleGet(rt, cache, key),
+		readOne: (service, key) => noteSingleRead(rt, service, key),
+		write: (service, method, original, args) => handleWrite(rt, service, method, original, args),
+		middleware: buildMiddleware(rt),
+		studio: buildStudioMiddleware(rt),
 		tick: () => tick(rt),
 		read: (service, query) => trackRead(rt, service, query),
 	};
@@ -959,7 +1193,7 @@ export async function installTargeted(ctx: InstallContext, config: RulesConfig) 
 	}, 60_000);
 	(rt.pruneTimer as any).unref?.();
 
-	await applyRules(config, 'startup');
+	await applyRules(config, origin);
 	if (problems.length) ctx.logger.warn(`${LOG_PREFIX} granular cache is limited: ${problems.join('; ')}`);
 }
 
@@ -1011,12 +1245,15 @@ export function measure(rt: Runtime, now = Date.now()): Promise<void> {
 }
 
 /** Uses new rules. Turning targeted clearing on clears the cache once: older answers are not indexed. */
-export async function applyRules(config: RulesConfig, origin: 'startup' | 'save') {
+export async function applyRules(config: RulesConfig, origin: 'startup' | 'reload' | 'save') {
 	const rt = runtime();
 	const wasTargeted = rt.config.targeted;
 	rt.config = targetedPossible(rt) ? config : { ...config, targeted: false };
+	// At startup the index is empty, so older responses can't be found: clear once. After a reload (extension update)
+	// the index is still there and complete, so nothing has to be cleared unless Granular mode was off.
 	if (rt.config.targeted && (!wasTargeted || origin === 'startup') && rt.cache && rt.originals) {
-		await fullClear(rt, rt.cache, { collection: null, action: null, reason: origin === 'startup' ? 'Directus started in Granular mode' : 'Switched to Granular mode' });
+		const reason = origin === 'startup' ? 'Directus started in Granular mode' : origin === 'reload' ? 'Cache Manager updated, switched to Granular mode' : 'Switched to Granular mode';
+		await fullClear(rt, rt.cache, { collection: null, action: null, reason });
 	}
 	if (!rt.config.targeted) {
 		rt.index.clear();
@@ -1052,6 +1289,10 @@ function toBool(value: unknown): boolean {
 	return value === true || (typeof value === 'string' && ['true', '1', 'yes', 'on'].includes(value.trim().toLowerCase()));
 }
 
+/** Cache Manager was updated from a version before 1.2.0 without a restart (joined with other problems, no final period). */
+export const OLD_MIDDLEWARE_PROBLEM =
+	'Restart Directus once after this update. Until then, Cache Manager tracks requests with the code of the version Directus started with, so fresh requests are counted as misses';
+
 /** Shown on the pages (joined with other problems, so no final period). */
 export const RESTART_PROBLEM =
 	"Restart Directus once to activate Granular Cache. Until then, every change clears the whole cache and lifetimes per collection don't apply. Rules that keep the cache already work";
@@ -1061,6 +1302,7 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 	const rt = runtime();
 	const problems = [...rt.problems];
 	if (!rt.handlers || !rt.middlewareRegistered) problems.unshift(RESTART_PROBLEM);
+	else if ((rt.middlewareVersion ?? 0) < WRAPPER_VERSION) problems.push(OLD_MIDDLEWARE_PROBLEM);
 	const store = rt.cache ? memoryStoreOf(rt.cache) : null;
 	// The last chunked measurement (never a scan here; see statusWithFreshSize).
 	const size: StoreSize | null = store ? (rt.lastSize ?? { entries: 0, bytes: 0, expired: 0, expiredBytes: 0 }) : null;
@@ -1083,8 +1325,11 @@ export function runtimeStatus(env: Record<string, unknown> = runtime().env): Run
 		history: lastDay(rt),
 		liveWrites: Object.fromEntries(rt.liveWrites),
 		reads: { ...rt.reads },
+		clearedBy: Object.fromEntries([...rt.clearedBy].map(([name, by]) => [name, { ...by }])),
 		readsByCollection: rt.config.targeted && !rt.shared ? Object.fromEntries([...rt.readsByCollection].map(([name, counts]) => [name, { ...counts }])) : null,
 		hourAgo: hourAgo(rt),
+		timings: { ...rt.timings },
+		timingsByCollection: rt.config.targeted && !rt.shared ? Object.fromEntries([...rt.timingsByCollection].map(([name, timings]) => [name, { ...timings }])) : null,
 	};
 }
 

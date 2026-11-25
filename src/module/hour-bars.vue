@@ -13,12 +13,12 @@
 			<span class="axis-max">{{ maxLabel }}</span>
 			<div class="columns" role="img" :aria-label="title">
 				<div v-for="(column, i) in columns" :key="i" v-tooltip="column.tooltip" class="column">
-					<div class="stack">
+					<div class="stack" :class="{ 'stack--grouped': grouped }">
 						<div
-							v-for="(segment, j) in column.segments.filter((s) => s.value > 0)"
+							v-for="(segment, j) in column.segments.filter((s) => grouped || s.value > 0)"
 							:key="j"
 							class="segment"
-							:style="{ height: `${(segment.value / max) * 100}%`, background: segment.color }"
+							:style="{ height: `${(segment.value / max) * 100}%`, background: segment.color, visibility: segment.value > 0 ? undefined : 'hidden' }"
 						/>
 					</div>
 				</div>
@@ -41,11 +41,15 @@ const props = defineProps<{
 	legend: Array<{ label: string; color: string }>;
 	format: (value: number) => string;
 	emptyText?: string;
+	/** Segments side by side instead of stacked (values that don't add up, such as averages). */
+	grouped?: boolean;
 }>();
 
 const empty = computed(() => props.columns.every((column) => column.segments.every((s) => !(s.value > 0))));
 
-const max = computed(() => Math.max(1, ...props.columns.map((column) => column.segments.reduce((sum, s) => sum + s.value, 0))));
+const max = computed(() =>
+	Math.max(1, ...props.columns.map((column) => (props.grouped ? Math.max(0, ...column.segments.map((s) => s.value)) : column.segments.reduce((sum, s) => sum + s.value, 0)))),
+);
 const maxLabel = computed(() => props.format(max.value));
 </script>
 
@@ -132,6 +136,15 @@ const maxLabel = computed(() => props.format(max.value));
 	inline-size: 100%;
 	block-size: 100%;
 	justify-content: flex-start;
+}
+.stack--grouped {
+	flex-direction: row;
+	align-items: flex-end;
+	gap: 1px;
+}
+.stack--grouped .segment {
+	flex: 1 1 0;
+	border-radius: 4px 4px 0 0;
 }
 .segment {
 	inline-size: 100%;
